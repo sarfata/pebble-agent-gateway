@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, AlertTriangle, Bot, CheckCircle, Copy, Gauge, Github, KeyRound, Radio, Settings as SettingsIcon, Shield } from "lucide-react";
+import { Activity, AlertTriangle, Bot, Brain, CheckCircle, Code2, Copy, Gauge, Github, KeyRound, Radio, Settings as SettingsIcon, Shield, Terminal, Wrench } from "lucide-react";
 import "./styles.css";
 
 type Page = "onboarding" | "dashboard" | "rings" | "agents" | "activity" | "settings" | "data" | "risks";
+type ConnectorKind = "codex" | "claude" | "openclaw" | "cli";
 type CreatedRing = { ok: boolean; ring_id: string; ingest_token: string; webhook_url: string };
 type CreatedAgent = { ok: boolean; agent_id: string; agent_token: string };
 type MessageHistoryPoint = { day: string; messages: number };
@@ -25,6 +26,59 @@ type OnboardingStatus = {
   latest_ack: null | { status: string; delivery_latency_ms: number | null; created_at: string };
   debug_mode: boolean;
 };
+type ConnectorOption = {
+  kind: ConnectorKind;
+  title: string;
+  subtitle: string;
+  description: string;
+  bestFor: string;
+  command: string;
+  voicePrefix: string;
+  icon: typeof Bot;
+};
+
+const connectorOptions: ConnectorOption[] = [
+  {
+    kind: "codex",
+    title: "Codex",
+    subtitle: "Coding work in a local repo",
+    description: "Claims ring messages and passes the transcript to the local Codex CLI. Use this for code edits, tests, reviews, and repo automation.",
+    bestFor: "Software projects where Codex should work inside your checkout.",
+    command: "pnpm --filter @pebble/agent-cli dev -- listen --agent codex",
+    voicePrefix: "Codex, fix the failing test",
+    icon: Code2
+  },
+  {
+    kind: "claude",
+    title: "Claude",
+    subtitle: "General assistant workflows",
+    description: "Claims ring messages and passes the transcript to a local Claude CLI command. Use this for writing, summarizing, planning, and general assistant tasks.",
+    bestFor: "Non-coding or mixed tasks you want handled by Claude locally.",
+    command: "pnpm --filter @pebble/agent-cli dev -- listen --agent claude",
+    voicePrefix: "Claude, summarize my last note",
+    icon: Brain
+  },
+  {
+    kind: "openclaw",
+    title: "OpenClaw",
+    subtitle: "OpenClaw local automations",
+    description: "Claims ring messages and passes the transcript to your local OpenClaw runner. Use this when OpenClaw owns the downstream automation.",
+    bestFor: "Custom local workflows backed by OpenClaw.",
+    command: "pnpm --filter @pebble/agent-cli dev -- listen --agent openclaw",
+    voicePrefix: "OpenClaw, run my morning workflow",
+    icon: Wrench
+  },
+  {
+    kind: "cli",
+    title: "CLI smoke test",
+    subtitle: "Print and ack only",
+    description: "Claims, decrypts, prints, and acks messages without invoking an external agent. Use this first to confirm delivery works.",
+    bestFor: "Testing the ring, gateway, encryption, and ack path.",
+    command: "pnpm --filter @pebble/agent-cli dev -- listen --agent print",
+    voicePrefix: "Test message",
+    icon: Terminal
+  }
+];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -319,7 +373,8 @@ function Agents() {
 function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; showTable?: boolean }) {
   const [rows, setRows] = useState<any[]>([]);
   const [created, setCreated] = useState<CreatedAgent | null>(null);
-  const [form, setForm] = useState({ kind: defaultKind, name: defaultName(defaultKind), encryption_public_key: "" });
+  const initialKind = isConnectorKind(defaultKind) ? defaultKind : "cli";
+  const [form, setForm] = useState<{ kind: ConnectorKind; name: string; encryption_public_key: string }>({ kind: initialKind, name: defaultName(initialKind), encryption_public_key: "" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = () => api<{ rows: any[] }>("/api/dashboard/agents").then((r) => setRows(r.rows));
@@ -360,28 +415,39 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
   }
   const serverUrl = window.location.origin;
   const keygenCommand = "pnpm --filter @pebble/agent-cli dev -- keygen";
+  const activeRows = rows.filter((row) => !row.revoked_at);
+  const selected = connectorOptions.find((option) => option.kind === form.kind) ?? connectorOptions[0];
   return <>
     <div className="setup-panel">
       <div>
         <h3>Add a local connector</h3>
         <p>The connector keeps its private key on your machine. The gateway only needs the public key so it can encrypt pending messages for that connector.</p>
       </div>
+      {activeRows.length > 0 && <div className="routing-note">
+        <strong>Before adding another connector</strong>
+        <p>You can have more than one. Voice prefixes route by kind: <code>Codex, ...</code> goes to Codex, <code>Claude, ...</code> goes to Claude, and <code>OpenClaw, ...</code> goes to OpenClaw. If you add multiple connectors of the same kind, a prefixed message is delivered to all active connectors of that kind. Messages without a prefix use your default target in Settings, or the first active connector if no default is set.</p>
+      </div>}
       <div className="step-list">
         <div>
           <strong>1. Generate a local key</strong>
           <CopyField label="Run in this repo" value={keygenCommand} />
         </div>
         <div>
-          <strong>2. Create the connector</strong>
+          <strong>2. Choose what should handle messages</strong>
+          <ConnectorChooser selected={form.kind} onSelect={(kind) => setForm({ ...form, kind, name: defaultName(kind) })} />
+          <div className="connector-preview">
+            <div>
+              <span>Preview</span>
+              <h4>{selected.title} connector</h4>
+              <p>{selected.bestFor}</p>
+            </div>
+            <CopyField label="Run command after creating" value={selected.command} />
+            <p className="hint">Try saying: <code>{selected.voicePrefix}</code></p>
+          </div>
+        </div>
+        <div>
+          <strong>3. Create the connector</strong>
           <div className="settings-grid">
-            <label>Kind
-              <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value, name: defaultName(e.target.value) })}>
-                <option value="codex">codex</option>
-                <option value="cli">cli</option>
-                <option value="claude">claude</option>
-                <option value="openclaw">openclaw</option>
-              </select>
-            </label>
             <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
           </div>
           <label className="wide-field">Public encryption key
@@ -401,6 +467,30 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
   </>;
 }
 
+function ConnectorChooser({ selected, onSelect }: { selected: ConnectorKind; onSelect: (kind: ConnectorKind) => void }) {
+  return <div className="connector-grid" role="radiogroup" aria-label="Connector type">
+    {connectorOptions.map((option) => {
+      const Icon = option.icon;
+      const active = option.kind === selected;
+      return <button
+        type="button"
+        key={option.kind}
+        className={active ? "connector-card selected" : "connector-card"}
+        onClick={() => onSelect(option.kind)}
+        role="radio"
+        aria-checked={active}
+      >
+        <span className="connector-icon"><Icon size={20} /></span>
+        <span className="connector-copy">
+          <strong>{option.title}</strong>
+          <small>{option.subtitle}</small>
+          <span>{option.description}</span>
+        </span>
+      </button>;
+    })}
+  </div>;
+}
+
 function AgentTokenPanel({ created, serverUrl }: { created: CreatedAgent; serverUrl: string }) {
   return <div className="setup-panel success-panel">
     <div>
@@ -414,7 +504,11 @@ function AgentTokenPanel({ created, serverUrl }: { created: CreatedAgent; server
   </div>;
 }
 
-function defaultName(kind: string): string {
+function isConnectorKind(kind: string): kind is ConnectorKind {
+  return ["codex", "claude", "openclaw", "cli"].includes(kind);
+}
+
+function defaultName(kind: ConnectorKind): string {
   if (kind === "codex") return "Local Codex";
   if (kind === "claude") return "Local Claude";
   if (kind === "openclaw") return "Local OpenClaw";

@@ -248,6 +248,77 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; co
   grid-template-columns: repeat(2, minmax(240px, 1fr));
   gap: 0.75rem;
 }
+.connector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+.connector-card {
+  width: 100%;
+  align-items: start;
+  gap: 0.75rem;
+  text-align: left;
+  background: #fbfcfa;
+  color: #23352e;
+  border-color: #d8e2d5;
+  padding: 0.9rem;
+}
+.connector-card.selected {
+  background: #e8f2ee;
+  border-color: #1d5f49;
+  box-shadow: inset 0 0 0 1px #1d5f49;
+}
+.connector-icon {
+  width: 2.2rem;
+  height: 2.2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: white;
+  color: #1d5f49;
+  border: 1px solid #d8e2d5;
+  flex: 0 0 auto;
+}
+.connector-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.connector-copy strong {
+  margin: 0;
+  font-size: 0.98rem;
+}
+.connector-copy small {
+  color: #627069;
+  font-size: 0.82rem;
+}
+.connector-copy span {
+  color: #40524a;
+  line-height: 1.35;
+  font-size: 0.9rem;
+}
+.connector-preview, .routing-note {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid #dfe5dc;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 0.85rem;
+  margin-top: 0.75rem;
+}
+.connector-preview h4 {
+  margin: 0.15rem 0;
+  font-size: 1rem;
+}
+.connector-preview span, .routing-note strong {
+  color: #627069;
+  font-size: 0.85rem;
+}
+.connector-preview p, .routing-note p {
+  margin: 0;
+  color: #40524a;
+  line-height: 1.45;
+}
 .copy-field {
   max-width: none;
   margin: 0;
@@ -354,6 +425,7 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; co
   main { padding: 1rem; }
   .inline-form { grid-template-columns: 1fr; align-items: stretch; }
   .settings-grid { grid-template-columns: 1fr; }
+  .connector-grid { grid-template-columns: 1fr; }
   .grid.three, .runbook-grid { grid-template-columns: 1fr; }
   .histogram {
     grid-template-columns: repeat(15, minmax(26px, 1fr));
