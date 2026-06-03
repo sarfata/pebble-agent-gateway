@@ -93,6 +93,14 @@ pre {
   padding: 1rem;
 }
 label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; color: #40524a; }
+.inline-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 420px) max-content;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+.inline-form label { margin-bottom: 0; }
 .error {
   margin: 0;
   border: 1px solid #d36a58;
@@ -106,4 +114,5 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; co
   aside { border-right: 0; border-bottom: 1px solid #dfe5dc; }
   aside button { width: auto; display: inline-flex; }
   main { padding: 1rem; }
+  .inline-form { grid-template-columns: 1fr; align-items: stretch; }
 }

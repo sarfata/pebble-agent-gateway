@@ -110,15 +110,35 @@ function Dashboard() {
 function Rings() {
   const [rows, setRows] = useState<any[]>([]);
   const [created, setCreated] = useState<any>(null);
+  const [name, setName] = useState("Pebble Index Ring");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const refresh = () => api<{ rows: any[] }>("/api/dashboard/rings").then((r) => setRows(r.rows));
   useEffect(() => { void refresh(); }, []);
   async function add() {
-    const name = prompt("Ring name") || "Pebble Index Ring";
-    setCreated(await api("/api/dashboard/rings", { method: "POST", body: JSON.stringify({ name }) }));
-    refresh();
+    setError(null);
+    if (!name.trim()) {
+      setError("Enter a ring name.");
+      return;
+    }
+    setBusy(true);
+    try {
+      setCreated(await api("/api/dashboard/rings", { method: "POST", body: JSON.stringify({ name: name.trim() }) }));
+      setName("Pebble Index Ring");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create ring.");
+    } finally {
+      setBusy(false);
+    }
   }
   return <section>
-    <header><h2>Rings</h2><button onClick={add}><KeyRound size={16} /> Add ring</button></header>
+    <header><h2>Rings</h2></header>
+    <div className="inline-form">
+      <label>Ring name<input value={name} onChange={(e) => { setError(null); setName(e.target.value); }} /></label>
+      <button disabled={busy} onClick={add}><KeyRound size={16} /> {busy ? "Adding..." : "Add ring"}</button>
+    </div>
+    {error && <p className="error" role="alert">{error}</p>}
     {created && <pre>{JSON.stringify(created, null, 2)}</pre>}
     <Table rows={rows} columns={["name", "created_at", "revoked_at"]} />
   </section>;
