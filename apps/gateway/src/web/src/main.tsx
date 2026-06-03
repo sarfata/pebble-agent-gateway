@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, Bot, Gauge, KeyRound, Radio, Settings as SettingsIcon } from "lucide-react";
+import { Activity, Bot, Copy, Gauge, KeyRound, Radio, Settings as SettingsIcon } from "lucide-react";
 import "./styles.css";
 
 type Page = "dashboard" | "rings" | "agents" | "activity" | "settings";
+type CreatedRing = { ok: boolean; ring_id: string; ingest_token: string; webhook_url: string };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -109,7 +110,7 @@ function Dashboard() {
 
 function Rings() {
   const [rows, setRows] = useState<any[]>([]);
-  const [created, setCreated] = useState<any>(null);
+  const [created, setCreated] = useState<CreatedRing | null>(null);
   const [name, setName] = useState("Pebble Index Ring");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -123,7 +124,7 @@ function Rings() {
     }
     setBusy(true);
     try {
-      setCreated(await api("/api/dashboard/rings", { method: "POST", body: JSON.stringify({ name: name.trim() }) }));
+      setCreated(await api<CreatedRing>("/api/dashboard/rings", { method: "POST", body: JSON.stringify({ name: name.trim() }) }));
       setName("Pebble Index Ring");
       await refresh();
     } catch (err) {
@@ -139,9 +140,42 @@ function Rings() {
       <button disabled={busy} onClick={add}><KeyRound size={16} /> {busy ? "Adding..." : "Add ring"}</button>
     </div>
     {error && <p className="error" role="alert">{error}</p>}
-    {created && <pre>{JSON.stringify(created, null, 2)}</pre>}
+    <CoreAppSettingsGuide created={created} />
     <Table rows={rows} columns={["name", "created_at", "revoked_at"]} />
   </section>;
+}
+
+function CoreAppSettingsGuide({ created }: { created: CreatedRing | null }) {
+  const webhookUrl = created?.webhook_url ?? `${window.location.origin}/api/ring/ingest`;
+  return <div className="setup-panel">
+    <div>
+      <h3>CoreApp webhook settings</h3>
+      <p>In the mobile app, open Index Settings, tap Webhook, and enter these values.</p>
+    </div>
+    <div className="settings-grid">
+      <CopyField label="Webhook URL" value={webhookUrl} />
+      <CopyField label="Auth Token" value={created?.ingest_token ?? "Create a ring to reveal this token once."} muted={!created} />
+      <CopyField label="Send" value="Transcription only" />
+      <CopyField label="Trigger" value="Double click & hold" />
+    </div>
+    <p className="hint">The current CoreApp sends the auth token as the <code>X-Widget-Token</code> header and posts multipart fields named <code>audio</code>, <code>transcription</code>, <code>recordedAt</code>, and <code>client</code>. This gateway accepts that format directly. Use Transcription only or Recording + Transcription; Recording only has no transcript for agent routing.</p>
+  </div>;
+}
+
+function CopyField({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
+  async function copy() {
+    if (muted) return;
+    await navigator.clipboard.writeText(value);
+  }
+  return <label className="copy-field">
+    <span>{label}</span>
+    <div>
+      <input readOnly value={value} className={muted ? "muted" : ""} />
+      <button type="button" className="icon-button" disabled={muted} onClick={copy} aria-label={`Copy ${label}`}>
+        <Copy size={16} />
+      </button>
+    </div>
+  </label>;
 }
 
 function Agents() {

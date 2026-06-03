@@ -24,12 +24,14 @@ export type AuthUser = {
 
 export type TokenCredential = {
   token: string;
-  source: "authorization_bearer" | "x-pebble-token" | "x-webhook-token" | "query_token" | "form_token";
+  source: "authorization_bearer" | "x-widget-token" | "x-pebble-token" | "x-webhook-token" | "query_token" | "form_token";
 };
 
 export function tokenCredential(c: Context): TokenCredential | null {
   const header = c.req.header("Authorization");
   if (header?.startsWith("Bearer ")) return { token: header.slice("Bearer ".length), source: "authorization_bearer" };
+  const widgetToken = c.req.header("X-Widget-Token");
+  if (widgetToken) return { token: widgetToken, source: "x-widget-token" };
   const pebbleToken = c.req.header("X-Pebble-Token");
   if (pebbleToken) return { token: pebbleToken, source: "x-pebble-token" };
   const webhookToken = c.req.header("X-Webhook-Token");

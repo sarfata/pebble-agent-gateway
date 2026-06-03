@@ -23,6 +23,11 @@ button:disabled {
   opacity: 0.62;
 }
 button.secondary { background: white; color: #1d5f49; }
+button.icon-button {
+  width: 2.5rem;
+  justify-content: center;
+  padding: 0;
+}
 input {
   border: 1px solid #c9d2c7;
   border-radius: 6px;
@@ -92,6 +97,11 @@ pre {
   border-radius: 8px;
   padding: 1rem;
 }
+code {
+  background: #edf2ef;
+  border-radius: 4px;
+  padding: 0.05rem 0.25rem;
+}
 label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; color: #40524a; }
 .inline-form {
   display: grid;
@@ -109,10 +119,54 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; co
   border-radius: 6px;
   padding: 0.65rem 0.75rem;
 }
+.setup-panel {
+  display: grid;
+  gap: 0.85rem;
+  background: white;
+  border: 1px solid #dfe5dc;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0 0 1rem;
+}
+.setup-panel h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+.setup-panel p {
+  margin: 0;
+  color: #5c6d65;
+  line-height: 1.45;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+.copy-field {
+  max-width: none;
+  margin: 0;
+}
+.copy-field > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 0.4rem;
+}
+.copy-field input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.86rem;
+}
+.copy-field input.muted {
+  color: #7a877f;
+  background: #f4f6f2;
+}
+.hint {
+  font-size: 0.9rem;
+}
 @media (max-width: 760px) {
   .shell { display: block; min-height: 100vh; }
   aside { border-right: 0; border-bottom: 1px solid #dfe5dc; }
   aside button { width: auto; display: inline-flex; }
   main { padding: 1rem; }
   .inline-form { grid-template-columns: 1fr; align-items: stretch; }
+  .settings-grid { grid-template-columns: 1fr; }
 }
