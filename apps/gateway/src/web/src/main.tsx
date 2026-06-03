@@ -6,6 +6,16 @@ import "./styles.css";
 type Page = "onboarding" | "dashboard" | "rings" | "agents" | "activity" | "settings" | "data" | "risks";
 type CreatedRing = { ok: boolean; ring_id: string; ingest_token: string; webhook_url: string };
 type CreatedAgent = { ok: boolean; agent_id: string; agent_token: string };
+type MessageHistoryPoint = { day: string; messages: number };
+type DashboardMetrics = {
+  message_history: MessageHistoryPoint[];
+  messages_received_today: number;
+  messages_delivered_today: number;
+  messages_expired_today: number;
+  average_delivery_latency_ms: number | null;
+  connected_agents: number;
+  debug_mode: boolean;
+};
 type OnboardingStatus = {
   rings: number;
   agents: number;
@@ -169,17 +179,48 @@ function StatusLine({ label, value }: { label: string; value: string }) {
 }
 
 function Dashboard() {
-  const [metrics, setMetrics] = useState<Record<string, unknown>>({});
-  useEffect(() => { api<Record<string, unknown>>("/api/dashboard/metrics").then(setMetrics); }, []);
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  useEffect(() => { api<DashboardMetrics>("/api/dashboard/metrics").then(setMetrics); }, []);
+  const cards = metrics ? Object.entries(metrics).filter(([key]) => key !== "message_history") : [];
   return <section>
-    <h2>Dashboard</h2>
+    <header><h2>Dashboard</h2></header>
+    <MessageHistogram history={metrics?.message_history ?? []} />
     <div className="grid">
-      {Object.entries(metrics).map(([key, value]) => <article key={key}>
+      {cards.map(([key, value]) => <article key={key}>
         <span>{key.replaceAll("_", " ")}</span>
         <strong>{String(value ?? "-")}</strong>
       </article>)}
     </div>
   </section>;
+}
+
+function MessageHistogram({ history }: { history: MessageHistoryPoint[] }) {
+  const max = Math.max(1, ...history.map((point) => point.messages));
+  const total = history.reduce((sum, point) => sum + point.messages, 0);
+  return <div className="histogram-panel">
+    <div className="histogram-header">
+      <div>
+        <h3>Messages Per Day</h3>
+        <p>Last 15 days</p>
+      </div>
+      <strong>{total}</strong>
+    </div>
+    <div className="histogram" aria-label="Messages per day for the last 15 days">
+      {history.map((point) => {
+        const height = `${Math.max(6, Math.round((point.messages / max) * 100))}%`;
+        return <div className="histogram-day" key={point.day} title={`${point.day}: ${point.messages} messages`}>
+          <span>{point.messages}</span>
+          <div className="histogram-track"><div className="histogram-bar" style={{ height }} /></div>
+          <time dateTime={point.day}>{formatShortDay(point.day)}</time>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+function formatShortDay(day: string): string {
+  const date = new Date(`${day}T00:00:00.000Z`);
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
 }
 
 function Rings() {

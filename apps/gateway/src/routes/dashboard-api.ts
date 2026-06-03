@@ -16,13 +16,31 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
   app.get("/metrics", (c) => {
     const user = c.get("user") as AuthUser;
     const today = new Date(); today.setHours(0, 0, 0, 0);
+    const historyStart = new Date(today);
+    historyStart.setDate(historyStart.getDate() - 14);
     const rows = db.prepare(`select event_type, status, delivery_latency_ms from activity_events where user_id = ? and created_at >= ?`)
       .all(user.id, today.toISOString()) as Array<{ event_type: string; status: string; delivery_latency_ms: number | null }>;
+    const historyRows = db.prepare(`
+      select substr(created_at, 1, 10) as day, count(*) as messages
+      from activity_events
+      where user_id = ?
+        and created_at >= ?
+        and event_type = 'ring.ingest'
+      group by substr(created_at, 1, 10)
+    `).all(user.id, historyStart.toISOString()) as Array<{ day: string; messages: number }>;
+    const countsByDay = new Map(historyRows.map((row) => [row.day, row.messages]));
+    const messageHistory = Array.from({ length: 15 }, (_, index) => {
+      const day = new Date(historyStart);
+      day.setDate(historyStart.getDate() + index);
+      const key = day.toISOString().slice(0, 10);
+      return { day: key, messages: countsByDay.get(key) ?? 0 };
+    });
     const delivered = rows.filter((r) => r.event_type === "delivery.acked").length;
     const latencies = rows.map((r) => r.delivery_latency_ms).filter((v): v is number => typeof v === "number");
     const connectedAgents = db.prepare(`select count(*) as n from agent_connectors where user_id = ? and revoked_at is null and last_seen_at > ?`)
       .get(user.id, new Date(Date.now() - 5 * 60_000).toISOString()) as { n: number };
     return c.json({
+      message_history: messageHistory,
       messages_received_today: rows.filter((r) => r.event_type === "delivery.created" || r.event_type === "ring.ingest").length,
       messages_delivered_today: delivered,
       messages_expired_today: rows.filter((r) => r.event_type === "delivery.expired").length,
