@@ -64,6 +64,17 @@ https://your-gateway.example.com/api/ring/ingest
 
 Use the one-time-displayed `ri_live_...` token as the bearer token.
 
+The current mobile-app path does not need QR setup-token exchange. If the app lets you enter only a webhook URL and token, use the dashboard-created ingest URL and `ri_live_...` token directly. The gateway accepts the token as any of:
+
+- `Authorization: Bearer ri_live_...`
+- `X-Pebble-Token: ri_live_...`
+- `X-Webhook-Token: ri_live_...`
+- `https://your-gateway.example.com/api/ring/ingest?token=ri_live_...`
+
+Prefer an HTTPS URL and a header-based token when the app supports it. The query-string form exists for compatibility, but URLs can be copied into logs by proxies or clients.
+
+For debugging, every ingest response includes a `request_id`, and the server emits privacy-safe structured logs for received webhooks, auth failures, invalid JSON, invalid payloads, routing misses, created deliveries, and accepted/idempotent events. Logs do not include transcripts, audio, or raw bearer tokens.
+
 ## QR auto-configuration plan
 
 `POST /api/provision/setup-token` creates a short-lived `pst_...` QR payload. A future Pebble app flow can exchange it at `/api/provision/exchange` for a webhook URL and ring ingest token.

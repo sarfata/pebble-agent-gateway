@@ -9,6 +9,7 @@ import { routeConnectors } from "../routing.js";
 import type { AuthRing } from "../auth.js";
 import type { RingIngestRequest } from "@pebble/protocol";
 import type { DeliveryStreamHub } from "./stream.js";
+import { logInfo, logWarn } from "../logger.js";
 
 export function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryStreamHub, ring: AuthRing, input: RingIngestRequest) {
   const now = new Date();
@@ -25,6 +26,11 @@ export function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryS
       from agent_deliveries join agent_connectors on agent_connectors.id = agent_deliveries.agent_id
       where event_id = ?
     `).all(existing.id);
+    logInfo("ring.ingest.idempotent", {
+      ring_id: ring.id,
+      event_id: existing.id,
+      deliveries: deliveries.length
+    });
     return { ok: true, event_id: existing.id, deliveries, expires_at: existing.expires_at, idempotent: true };
   }
 
@@ -54,6 +60,12 @@ export function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryS
         target_kind: routing.targetHint,
         payload_bytes: payloadBytes,
         error_code: "no_target"
+      });
+      logWarn("ring.ingest.no_target", {
+        ring_id: ring.id,
+        event_id: eventId,
+        target_hint: routing.targetHint,
+        payload_bytes: payloadBytes
       });
       return [];
     }
@@ -104,6 +116,14 @@ export function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryS
         status: "pending",
         target_kind: agent.kind,
         payload_bytes: payloadBytes
+      });
+      logInfo("delivery.created", {
+        ring_id: ring.id,
+        agent_id: agent.id,
+        event_id: eventId,
+        delivery_id: deliveryId,
+        agent_kind: agent.kind,
+        expires_at: expiresAt
       });
     }
     return created;

@@ -22,24 +22,35 @@ export type AuthUser = {
   role: string;
 };
 
-function bearer(c: Context): string | null {
+export type TokenCredential = {
+  token: string;
+  source: "authorization_bearer" | "x-pebble-token" | "x-webhook-token" | "query_token";
+};
+
+export function tokenCredential(c: Context): TokenCredential | null {
   const header = c.req.header("Authorization");
-  if (!header?.startsWith("Bearer ")) return null;
-  return header.slice("Bearer ".length);
+  if (header?.startsWith("Bearer ")) return { token: header.slice("Bearer ".length), source: "authorization_bearer" };
+  const pebbleToken = c.req.header("X-Pebble-Token");
+  if (pebbleToken) return { token: pebbleToken, source: "x-pebble-token" };
+  const webhookToken = c.req.header("X-Webhook-Token");
+  if (webhookToken) return { token: webhookToken, source: "x-webhook-token" };
+  const queryToken = c.req.query("token");
+  if (queryToken) return { token: queryToken, source: "query_token" };
+  return null;
 }
 
 export function authenticateRing(db: Db, config: GatewayConfig, c: Context): AuthRing | null {
-  const token = bearer(c);
-  if (!token) return null;
+  const credential = tokenCredential(c);
+  if (!credential) return null;
   return db.prepare(`select id, user_id, name from rings where ingest_token_hash = ? and revoked_at is null`)
-    .get(hashToken(token, config.tokenPepper)) as AuthRing | undefined ?? null;
+    .get(hashToken(credential.token, config.tokenPepper)) as AuthRing | undefined ?? null;
 }
 
 export function authenticateAgent(db: Db, config: GatewayConfig, c: Context): AuthAgent | null {
-  const token = bearer(c);
-  if (!token) return null;
+  const credential = tokenCredential(c);
+  if (!credential) return null;
   return db.prepare(`select id, user_id, kind, name from agent_connectors where token_hash = ? and revoked_at is null`)
-    .get(hashToken(token, config.tokenPepper)) as AuthAgent | undefined ?? null;
+    .get(hashToken(credential.token, config.tokenPepper)) as AuthAgent | undefined ?? null;
 }
 
 export function authUserMiddleware(db: Db, config: GatewayConfig): MiddlewareHandler {

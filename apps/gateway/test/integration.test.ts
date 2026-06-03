@@ -10,6 +10,7 @@ import { expirePendingDeliveries } from "../src/services/queue/expire.js";
 import { decryptEnvelope } from "../src/services/crypto/envelope.js";
 import { DeliveryStreamHub } from "../src/services/queue/stream.js";
 import { agentEventsRoutes } from "../src/routes/agent-events.js";
+import { ringIngestRoutes } from "../src/routes/ring-ingest.js";
 
 function seed() {
   const db = openDb(":memory:");
@@ -103,5 +104,26 @@ describe("gateway integration", () => {
     const activity = db.prepare(`select coalesce(group_concat(metadata_json), '') as text from activity_events`).get() as { text: string };
     expect(activity.text).not.toContain("reply body");
     fetchMock.mockRestore();
+  });
+
+  it("accepts current mobile-app direct URL plus token ingest without setup exchange", async () => {
+    const { db, config, ringToken } = seed();
+    const hub = new DeliveryStreamHub();
+    const app = new Hono().route("/api/ring", ringIngestRoutes(db, config, hub, () => false));
+    const response = await app.request(`/api/ring/ingest?token=${encodeURIComponent(ringToken)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message_id: "mobile-direct-1",
+        recorded_at: "2026-06-02T19:22:00.000Z",
+        transcript: "Codex, handle this direct mobile webhook",
+        audio_url: null,
+        metadata: { source: "mobile-app" }
+      })
+    });
+    const body = await response.json() as { ok: boolean; request_id: string };
+    expect(response.status).toBe(202);
+    expect(body.ok).toBe(true);
+    expect(body.request_id.startsWith("req_")).toBe(true);
   });
 });
