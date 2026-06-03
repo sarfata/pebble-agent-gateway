@@ -126,4 +126,24 @@ describe("gateway integration", () => {
     expect(body.ok).toBe(true);
     expect(body.request_id.startsWith("req_")).toBe(true);
   });
+
+  it("accepts current mobile-app multipart token and transcript fields", async () => {
+    const { db, config, ringToken } = seed();
+    const hub = new DeliveryStreamHub();
+    const app = new Hono().route("/api/ring", ringIngestRoutes(db, config, hub, () => false));
+    const form = new FormData();
+    form.set("token", ringToken);
+    form.set("message_id", "mobile-multipart-1");
+    form.set("recorded_at", "2026-06-02T19:22:00.000Z");
+    form.set("transcript", "Codex, handle this multipart webhook");
+    form.set("metadata", JSON.stringify({ source: "mobile-app" }));
+    const response = await app.request("/api/ring/ingest", {
+      method: "POST",
+      body: form
+    });
+    const body = await response.json() as { ok: boolean; request_id: string };
+    expect(response.status).toBe(202);
+    expect(body.ok).toBe(true);
+    expect(body.request_id.startsWith("req_")).toBe(true);
+  });
 });

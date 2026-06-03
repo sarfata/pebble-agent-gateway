@@ -24,7 +24,7 @@ export type AuthUser = {
 
 export type TokenCredential = {
   token: string;
-  source: "authorization_bearer" | "x-pebble-token" | "x-webhook-token" | "query_token";
+  source: "authorization_bearer" | "x-pebble-token" | "x-webhook-token" | "query_token" | "form_token";
 };
 
 export function tokenCredential(c: Context): TokenCredential | null {
@@ -42,8 +42,12 @@ export function tokenCredential(c: Context): TokenCredential | null {
 export function authenticateRing(db: Db, config: GatewayConfig, c: Context): AuthRing | null {
   const credential = tokenCredential(c);
   if (!credential) return null;
+  return authenticateRingToken(db, config, credential.token);
+}
+
+export function authenticateRingToken(db: Db, config: GatewayConfig, token: string): AuthRing | null {
   return db.prepare(`select id, user_id, name from rings where ingest_token_hash = ? and revoked_at is null`)
-    .get(hashToken(credential.token, config.tokenPepper)) as AuthRing | undefined ?? null;
+    .get(hashToken(token, config.tokenPepper)) as AuthRing | undefined ?? null;
 }
 
 export function authenticateAgent(db: Db, config: GatewayConfig, c: Context): AuthAgent | null {

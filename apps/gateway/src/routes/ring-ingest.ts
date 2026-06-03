@@ -3,7 +3,7 @@ import { ringIngestSchema } from "@pebble/protocol";
 import { nanoid } from "nanoid";
 import type { Db } from "../db/migrate.js";
 import type { GatewayConfig } from "../config.js";
-import { authenticateRing, tokenCredential } from "../services/auth.js";
+import { authenticateRing, authenticateRingToken, type TokenCredential, tokenCredential } from "../services/auth.js";
 import { enqueueRingMessage } from "../services/queue/enqueue.js";
 import type { DeliveryStreamHub } from "../services/queue/stream.js";
 import { hashToken } from "../services/crypto/token-hash.js";
@@ -24,12 +24,25 @@ export function ringIngestRoutes(db: Db, config: GatewayConfig, hub: DeliveryStr
       logWarn("ring.ingest.rejected", { request_id: requestId, reason: "draining" });
       return c.json({ ok: false, error: "draining", request_id: requestId }, 503);
     }
-    const credential = tokenCredential(c);
+    let body: unknown;
+    let credential: TokenCredential | null = tokenCredential(c);
+    const contentType = c.req.header("Content-Type") ?? "";
+    if (contentType.toLowerCase().includes("multipart/form-data")) {
+      const form = await c.req.formData();
+      const token = getFormString(form, ["token", "webhook_token", "ingest_token", "ring_token", "authorization"]);
+      if (!credential && token) credential = { token: stripBearer(token), source: "form_token" };
+      body = formToIngestBody(form);
+      logInfo("ring.ingest.multipart_parsed", {
+        request_id: requestId,
+        form_fields: summarizeFormFields(form),
+        has_audio_file: hasFormFile(form)
+      });
+    }
     if (!credential) {
       logWarn("ring.ingest.auth_failed", { request_id: requestId, reason: "missing_token" });
       return c.json({ ok: false, error: "unauthorized", request_id: requestId }, 401);
     }
-    const ring = authenticateRing(db, config, c);
+    const ring = credential.source === "form_token" ? authenticateRingToken(db, config, credential.token) : authenticateRing(db, config, c);
     if (!ring) {
       logWarn("ring.ingest.auth_failed", {
         request_id: requestId,
@@ -39,9 +52,8 @@ export function ringIngestRoutes(db: Db, config: GatewayConfig, hub: DeliveryStr
       });
       return c.json({ ok: false, error: "unauthorized", request_id: requestId }, 401);
     }
-    let body: unknown;
     try {
-      body = await c.req.json();
+      body ??= await c.req.json();
     } catch {
       logWarn("ring.ingest.invalid_json", { request_id: requestId, ring_id: ring.id });
       logActivity(db, {
@@ -79,4 +91,67 @@ export function ringIngestRoutes(db: Db, config: GatewayConfig, hub: DeliveryStr
     return c.json({ ...result, request_id: requestId }, 202);
   });
   return app;
+}
+
+function stripBearer(value: string): string {
+  return value.startsWith("Bearer ") ? value.slice("Bearer ".length) : value;
+}
+
+function getFormString(form: FormData, names: string[]): string | null {
+  for (const name of names) {
+    const value = form.get(name);
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function formToIngestBody(form: FormData): unknown {
+  const metadata = parseMetadata(getFormString(form, ["metadata", "metadata_json"]));
+  const audio = getFirstFile(form, ["audio", "audio_file", "file", "recording"]);
+  if (audio) {
+    metadata.audio_file = {
+      name: audio.name || null,
+      type: audio.type || null,
+      size: audio.size
+    };
+  }
+  return {
+    message_id: getFormString(form, ["message_id", "messageId", "source_message_id", "id"]) ?? `mobile-${Date.now()}`,
+    recorded_at: getFormString(form, ["recorded_at", "recordedAt", "created_at", "timestamp"]) ?? new Date().toISOString(),
+    transcript: getFormString(form, ["transcript", "text", "message", "body"]) ?? "",
+    audio_url: getFormString(form, ["audio_url", "audioUrl"]) ?? null,
+    metadata
+  };
+}
+
+function parseMetadata(value: string | null): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return { metadata_parse_error: true };
+  }
+}
+
+function getFirstFile(form: FormData, names: string[]): File | null {
+  for (const name of names) {
+    const value = form.get(name);
+    if (value instanceof File) return value;
+  }
+  return null;
+}
+
+function hasFormFile(form: FormData): boolean {
+  for (const value of form.values()) {
+    if (value instanceof File) return true;
+  }
+  return false;
+}
+
+function summarizeFormFields(form: FormData): string {
+  return Array.from(form.entries())
+    .map(([key, value]) => value instanceof File ? `${key}:file:${value.type || "unknown"}:${value.size}` : `${key}:text`)
+    .sort()
+    .join(",");
 }
