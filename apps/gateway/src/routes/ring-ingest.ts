@@ -29,7 +29,7 @@ export function ringIngestRoutes(db: Db, config: GatewayConfig, hub: DeliveryStr
     const contentType = c.req.header("Content-Type") ?? "";
     if (contentType.toLowerCase().includes("multipart/form-data")) {
       const form = await c.req.formData();
-      const token = getFormString(form, ["token", "webhook_token", "ingest_token", "ring_token", "authorization"]);
+      const token = getFormString(form, ["token", "webhook_token", "ingest_token", "ring_token", "authorization"]) ?? getTokenFromJsonFormFields(form);
       if (!credential && token) credential = { token: stripBearer(token), source: "form_token" };
       body = formToIngestBody(form);
       logInfo("ring.ingest.multipart_parsed", {
@@ -118,10 +118,48 @@ function formToIngestBody(form: FormData): unknown {
   return {
     message_id: getFormString(form, ["message_id", "messageId", "source_message_id", "id"]) ?? `mobile-${Date.now()}`,
     recorded_at: getFormString(form, ["recorded_at", "recordedAt", "created_at", "timestamp"]) ?? new Date().toISOString(),
-    transcript: getFormString(form, ["transcript", "text", "message", "body"]) ?? "",
+    transcript: getFormString(form, ["transcript", "transcription", "text", "message", "body"]) ?? "",
     audio_url: getFormString(form, ["audio_url", "audioUrl"]) ?? null,
     metadata
   };
+}
+
+function getTokenFromJsonFormFields(form: FormData): string | null {
+  for (const value of form.values()) {
+    if (typeof value !== "string") continue;
+    const token = tokenFromJson(value);
+    if (token) return token;
+  }
+  return null;
+}
+
+function tokenFromJson(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
+  try {
+    return findTokenInJson(JSON.parse(trimmed) as unknown);
+  } catch {
+    return null;
+  }
+}
+
+function findTokenInJson(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const token = findTokenInJson(item);
+      if (token) return token;
+    }
+    return null;
+  }
+  for (const [key, nested] of Object.entries(value)) {
+    if (typeof nested === "string" && ["token", "webhook_token", "ingest_token", "ring_token", "authorization"].includes(key)) {
+      return nested.trim();
+    }
+    const token = findTokenInJson(nested);
+    if (token) return token;
+  }
+  return null;
 }
 
 function parseMetadata(value: string | null): Record<string, unknown> {

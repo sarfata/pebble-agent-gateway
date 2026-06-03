@@ -146,4 +146,23 @@ describe("gateway integration", () => {
     expect(body.ok).toBe(true);
     expect(body.request_id.startsWith("req_")).toBe(true);
   });
+
+  it("accepts observed CoreApp multipart fields with nested client token", async () => {
+    const { db, config, ringToken } = seed();
+    const hub = new DeliveryStreamHub();
+    const app = new Hono().route("/api/ring", ringIngestRoutes(db, config, hub, () => false));
+    const form = new FormData();
+    form.set("client", JSON.stringify({ token: ringToken }));
+    form.set("recordedAt", "2026-06-02T19:22:00.000Z");
+    form.set("transcription", "Codex, handle this observed mobile webhook");
+    form.set("audio", new File([new Uint8Array([1, 2, 3])], "audio.mp4", { type: "audio/mp4" }));
+    const response = await app.request("/api/ring/ingest", {
+      method: "POST",
+      body: form
+    });
+    const body = await response.json() as { ok: boolean; request_id: string };
+    expect(response.status).toBe(202);
+    expect(body.ok).toBe(true);
+    expect(body.request_id.startsWith("req_")).toBe(true);
+  });
 });
