@@ -1,0 +1,97 @@
+:root {
+  color: #17201a;
+  background: #f7f8f5;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input { font: inherit; }
+button {
+  border: 1px solid #1d5f49;
+  background: #1d5f49;
+  color: white;
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+}
+button.secondary { background: white; color: #1d5f49; }
+input {
+  border: 1px solid #c9d2c7;
+  border-radius: 6px;
+  padding: 0.6rem 0.7rem;
+  width: 100%;
+}
+.auth {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+.auth section {
+  width: min(420px, calc(100vw - 32px));
+  display: grid;
+  gap: 0.8rem;
+}
+.row, header { display: flex; align-items: center; gap: 0.7rem; }
+header { justify-content: space-between; }
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+aside {
+  border-right: 1px solid #dfe5dc;
+  background: #ffffff;
+  padding: 1rem;
+}
+aside h1 { font-size: 1rem; margin: 0 0 1rem; }
+aside button {
+  width: 100%;
+  justify-content: flex-start;
+  margin-bottom: 0.35rem;
+  background: transparent;
+  color: #23352e;
+  border-color: transparent;
+}
+aside button.active { background: #e8f2ee; border-color: #c7ded5; color: #174937; }
+main { padding: 1.5rem; overflow: auto; }
+h2 { margin-top: 0; font-size: 1.35rem; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+}
+article {
+  background: white;
+  border: 1px solid #dfe5dc;
+  border-radius: 8px;
+  padding: 1rem;
+}
+article span { display: block; color: #627069; font-size: 0.85rem; }
+article strong { display: block; font-size: 1.7rem; margin-top: 0.35rem; }
+.table {
+  overflow-x: auto;
+  border: 1px solid #dfe5dc;
+  border-radius: 8px;
+  background: white;
+}
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 0.7rem; border-bottom: 1px solid #edf0eb; white-space: nowrap; }
+th { color: #617067; font-weight: 600; background: #fbfcfa; }
+pre {
+  white-space: pre-wrap;
+  background: #17201a;
+  color: #eff8f0;
+  border-radius: 8px;
+  padding: 1rem;
+}
+label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; color: #40524a; }
+@media (max-width: 760px) {
+  .shell { grid-template-columns: 1fr; }
+  aside { border-right: 0; border-bottom: 1px solid #dfe5dc; }
+  aside button { width: auto; display: inline-flex; }
+  main { padding: 1rem; }
+}

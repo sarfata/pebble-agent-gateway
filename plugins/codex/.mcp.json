@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pebble-agent-gateway": {
+      "command": "node",
+      "args": ["TODO/dist/mcp-server.js"]
+    }
+  }
+}

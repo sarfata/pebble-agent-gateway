@@ -1,0 +1,21 @@
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      PUBLIC_BASE_URL: "https://replace-me.example.com"
+      DATABASE_URL: "file:/data/gateway.sqlite"
+      MESSAGE_RETENTION_MODE: "encrypted_ephemeral"
+      MESSAGE_TTL_MINUTES: "60"
+      DELETE_PAYLOAD_ON_CLAIM: "true"
+      DEBUG_RETENTION: "false"
+    env_file:
+      - .env
+    volumes:
+      - gateway_data:/data
+
+volumes:
+  gateway_data:

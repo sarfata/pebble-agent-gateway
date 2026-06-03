@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-web/
+apps/*/dist/
+apps/gateway/dist-web/
+packages/*/dist/
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.DS_Store
+.env

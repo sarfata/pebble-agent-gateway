@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/protocol" },
+    { "path": "packages/connector-core" },
+    { "path": "apps/gateway" },
+    { "path": "apps/agent-cli" }
+  ]
+}

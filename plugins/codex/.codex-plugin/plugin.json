@@ -1,0 +1,6 @@
+{
+  "name": "pebble-agent-gateway-codex",
+  "version": "0.1.0",
+  "description": "Scaffold for checking Pebble Index ring messages through Pebble Agent Gateway.",
+  "skills": ["skills/pebble-inbox/SKILL.md"]
+}
