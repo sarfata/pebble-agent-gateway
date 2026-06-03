@@ -255,6 +255,12 @@ function RingsSetup({ showTable = false }: { showTable?: boolean }) {
       setBusy(false);
     }
   }
+  async function revoke(row: any) {
+    if (row.revoked_at) return;
+    if (!confirm(`Revoke ring "${row.name}"? Its current ingest token will stop working immediately.`)) return;
+    await api(`/api/dashboard/rings/${row.id}/revoke`, { method: "POST", body: "{}" });
+    await refresh();
+  }
   return <>
     <div className="inline-form">
       <label>Ring name<input value={name} onChange={(e) => { setError(null); setName(e.target.value); }} /></label>
@@ -262,7 +268,11 @@ function RingsSetup({ showTable = false }: { showTable?: boolean }) {
     </div>
     {error && <p className="error" role="alert">{error}</p>}
     <CoreAppSettingsGuide created={created} />
-    {showTable && <Table rows={rows} columns={["name", "created_at", "revoked_at"]} />}
+    {showTable && <Table rows={rows} columns={["name", "created_at", "revoked_at"]} actions={(row) => (
+      <button className="danger-button" disabled={Boolean(row.revoked_at)} onClick={() => revoke(row)}>
+        {row.revoked_at ? "Revoked" : "Revoke"}
+      </button>
+    )} />}
   </>;
 }
 
@@ -342,6 +352,12 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
       setBusy(false);
     }
   }
+  async function revoke(row: any) {
+    if (row.revoked_at) return;
+    if (!confirm(`Revoke connector "${row.name}"? Its current agent token will stop working immediately.`)) return;
+    await api(`/api/dashboard/agents/${row.id}/revoke`, { method: "POST", body: "{}" });
+    await refresh();
+  }
   const serverUrl = window.location.origin;
   const keygenCommand = "pnpm --filter @pebble/agent-cli dev -- keygen";
   return <>
@@ -377,7 +393,11 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
       </div>
     </div>
     {created && <AgentTokenPanel created={created} serverUrl={serverUrl} />}
-    {showTable && <Table rows={rows} columns={["kind", "name", "last_seen_at", "revoked_at"]} />}
+    {showTable && <Table rows={rows} columns={["kind", "name", "last_seen_at", "revoked_at"]} actions={(row) => (
+      <button className="danger-button" disabled={Boolean(row.revoked_at)} onClick={() => revoke(row)}>
+        {row.revoked_at ? "Revoked" : "Revoke"}
+      </button>
+    )} />}
   </>;
 }
 
@@ -493,9 +513,9 @@ function Risks() {
   </section>;
 }
 
-function Table({ rows, columns }: { rows: any[]; columns: string[] }) {
-  return <div className="table"><table><thead><tr>{columns.map((c) => <th key={c}>{c.replaceAll("_", " ")}</th>)}</tr></thead><tbody>
-    {rows.map((row, i) => <tr key={row.id ?? i}>{columns.map((c) => <td key={c}>{String(row[c] ?? "")}</td>)}</tr>)}
+function Table({ rows, columns, actions }: { rows: any[]; columns: string[]; actions?: (row: any) => React.ReactNode }) {
+  return <div className="table"><table><thead><tr>{columns.map((c) => <th key={c}>{c.replaceAll("_", " ")}</th>)}{actions && <th>actions</th>}</tr></thead><tbody>
+    {rows.map((row, i) => <tr key={row.id ?? i}>{columns.map((c) => <td key={c}>{String(row[c] ?? "")}</td>)}{actions && <td>{actions(row)}</td>}</tr>)}
   </tbody></table></div>;
 }
 

@@ -23,6 +23,12 @@ button:disabled {
   opacity: 0.62;
 }
 button.secondary { background: white; color: #1d5f49; }
+button.danger-button {
+  background: white;
+  border-color: #c75c4c;
+  color: #9a2e20;
+  padding: 0.4rem 0.6rem;
+}
 button.icon-button {
   width: 2.5rem;
   justify-content: center;
