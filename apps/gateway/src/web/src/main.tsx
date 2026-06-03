@@ -368,6 +368,8 @@ function ActivityPage() {
 
 function Settings() {
   const [form, setForm] = useState({ default_agent_kind: "", ntfy_url: "" });
+  const [me, setMe] = useState<{ config: { debugRetention: boolean } } | null>(null);
+  useEffect(() => { api<{ config: { debugRetention: boolean } }>("/api/dashboard/me").then(setMe).catch(() => undefined); }, []);
   async function save() {
     await api("/api/dashboard/settings", { method: "POST", body: JSON.stringify(form) });
     alert("Saved");
@@ -377,6 +379,11 @@ function Settings() {
     <label>Default target agent kind<input value={form.default_agent_kind} onChange={(e) => setForm({ ...form, default_agent_kind: e.target.value })} placeholder="cli, claude, codex, openclaw" /></label>
     <label>ntfy topic URL<input value={form.ntfy_url} onChange={(e) => setForm({ ...form, ntfy_url: e.target.value })} placeholder="https://ntfy.sh/topic" /></label>
     <button onClick={save}>Save</button>
+    <div className={me?.config.debugRetention ? "setup-panel danger-panel" : "setup-panel"}>
+      <h3>Debug retention</h3>
+      <p>Status: <strong>{me?.config.debugRetention ? "enabled" : "disabled"}</strong></p>
+      <p className="hint">This MVP does not enable transcript retention from the browser. To debug message contents, set <code>DEBUG_RETENTION=true</code> deliberately in the deployment environment and restart, then turn it off again. The normal activity table remains metadata-only.</p>
+    </div>
   </section>;
 }
 
