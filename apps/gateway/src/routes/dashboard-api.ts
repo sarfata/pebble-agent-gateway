@@ -32,6 +32,44 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
     });
   });
 
+  app.get("/onboarding/status", (c) => {
+    const user = c.get("user") as AuthUser;
+    const connectedSince = new Date(Date.now() - 5 * 60_000).toISOString();
+    const rings = db.prepare(`select count(*) as n from rings where user_id = ? and revoked_at is null`)
+      .get(user.id) as { n: number };
+    const agents = db.prepare(`select count(*) as n from agent_connectors where user_id = ? and revoked_at is null`)
+      .get(user.id) as { n: number };
+    const connectedAgents = db.prepare(`select count(*) as n from agent_connectors where user_id = ? and revoked_at is null and last_seen_at > ?`)
+      .get(user.id, connectedSince) as { n: number };
+    const latestRing = db.prepare(`
+      select event_type, status, error_code, created_at
+      from activity_events
+      where user_id = ? and event_type = 'ring.ingest'
+      order by created_at desc limit 1
+    `).get(user.id) ?? null;
+    const latestDelivery = db.prepare(`
+      select event_type, status, target_kind, created_at
+      from activity_events
+      where user_id = ? and event_type = 'delivery.created'
+      order by created_at desc limit 1
+    `).get(user.id) ?? null;
+    const latestAck = db.prepare(`
+      select event_type, status, target_kind, delivery_latency_ms, created_at
+      from activity_events
+      where user_id = ? and event_type = 'delivery.acked'
+      order by created_at desc limit 1
+    `).get(user.id) ?? null;
+    return c.json({
+      rings: rings.n,
+      agents: agents.n,
+      connected_agents: connectedAgents.n,
+      latest_ring: latestRing,
+      latest_delivery: latestDelivery,
+      latest_ack: latestAck,
+      debug_mode: config.debugRetention
+    });
+  });
+
   app.get("/activity", (c) => {
     const user = c.get("user") as AuthUser;
     const rows = db.prepare(`

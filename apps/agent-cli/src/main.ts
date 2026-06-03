@@ -4,6 +4,7 @@ import type { PlaintextDeliveryPayload } from "@pebble/protocol";
 import { PebbleGatewayClient, connectDeliveryEvents } from "@pebble/connector-core";
 import { decryptEnvelope } from "@pebble/gateway/services/crypto/envelope";
 import { ensureKeypair, loadConfig, saveConfig } from "./keypair.js";
+import { commandHelp, runAgent, type AgentMode } from "./agent-runner.js";
 
 const program = new Command();
 
@@ -32,19 +33,27 @@ program.command("login")
   });
 
 program.command("listen")
+  .option("--agent <mode>", "print, codex, claude, or openclaw", "print")
   .option("--reply <text>")
-  .description("Connect to SSE, claim deliveries, decrypt, print, ack, and optionally reply")
-  .action((options: { reply?: string }) => {
+  .description("Connect to SSE, claim deliveries, decrypt, run the selected local agent, ack, and optionally reply")
+  .action((options: { agent: AgentMode; reply?: string }) => {
     const config = loadConfig();
     const keypair = ensureKeypair();
     const client = new PebbleGatewayClient(config.server, config.token);
+    if (!["print", "codex", "claude", "openclaw"].includes(options.agent)) {
+      throw new Error("--agent must be print, codex, claude, or openclaw");
+    }
     console.log("Connected to Pebble Agent Gateway");
+    console.log(`Agent mode: ${options.agent}`);
+    console.log(`Runner: ${commandHelp(options.agent)}`);
     console.log("Waiting for messages...");
     connectDeliveryEvents(config.server, config.token, async (event) => {
       try {
         const envelope = await client.claim(event.delivery_id);
         const payload = decryptEnvelope<PlaintextDeliveryPayload>(envelope, keypair.privateKey);
         console.log(`\n[${payload.recorded_at}] ${payload.transcript}`);
+        const result = await runAgent(options.agent, payload);
+        if (result) console.log(result);
         await client.ack(event.delivery_id);
         console.log(`Acked delivery ${event.delivery_id}`);
         if (options.reply) await client.reply(event.event_id, event.delivery_id, options.reply);

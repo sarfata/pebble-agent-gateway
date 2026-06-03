@@ -1,11 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, Bot, Copy, Gauge, KeyRound, Radio, Settings as SettingsIcon } from "lucide-react";
+import { Activity, AlertTriangle, Bot, CheckCircle, Copy, Gauge, Github, KeyRound, Radio, Settings as SettingsIcon, Shield } from "lucide-react";
 import "./styles.css";
 
-type Page = "dashboard" | "rings" | "agents" | "activity" | "settings";
+type Page = "onboarding" | "dashboard" | "rings" | "agents" | "activity" | "settings" | "data" | "risks";
 type CreatedRing = { ok: boolean; ring_id: string; ingest_token: string; webhook_url: string };
 type CreatedAgent = { ok: boolean; agent_id: string; agent_token: string };
+type OnboardingStatus = {
+  rings: number;
+  agents: number;
+  connected_agents: number;
+  latest_ring: null | { status: string; error_code: string | null; created_at: string };
+  latest_delivery: null | { status: string; target_kind: string | null; created_at: string };
+  latest_ack: null | { status: string; delivery_latency_ms: number | null; created_at: string };
+  debug_mode: boolean;
+};
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -20,7 +29,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function App() {
-  const [page, setPage] = useState<Page>((location.pathname.split("/")[1] as Page) || "dashboard");
+  const [page, setPage] = useState<Page>(parsePage(location.pathname));
   const [ready, setReady] = useState(false);
   const [login, setLogin] = useState({ email: "", password: "" });
   const [authError, setAuthError] = useState<string | null>(null);
@@ -71,11 +80,14 @@ function App() {
   }
 
   const nav = [
+    ["onboarding", CheckCircle, "Setup"],
     ["dashboard", Gauge, "Dashboard"],
     ["rings", Radio, "Rings"],
     ["agents", Bot, "Agents"],
     ["activity", Activity, "Activity"],
-    ["settings", SettingsIcon, "Settings"]
+    ["settings", SettingsIcon, "Settings"],
+    ["data", Shield, "Data"],
+    ["risks", AlertTriangle, "Risks"]
   ] as const;
 
   return <div className="shell">
@@ -84,15 +96,76 @@ function App() {
       {nav.map(([id, Icon, label]) => <button key={id} className={page === id ? "active" : ""} onClick={() => { setPage(id); history.pushState(null, "", `/${id}`); }}>
         <Icon size={18} /> {label}
       </button>)}
+      <footer>
+        <a href="https://github.com/sarfata/pebble-agent-gateway" target="_blank" rel="noreferrer"><Github size={15} /> Open source on GitHub</a>
+      </footer>
     </aside>
     <main>
+      {page === "onboarding" && <Onboarding />}
       {page === "dashboard" && <Dashboard />}
       {page === "rings" && <Rings />}
       {page === "agents" && <Agents />}
       {page === "activity" && <ActivityPage />}
       {page === "settings" && <Settings />}
+      {page === "data" && <DataProtection />}
+      {page === "risks" && <Risks />}
     </main>
   </div>;
+}
+
+function Onboarding() {
+  const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  useEffect(() => {
+    const refresh = () => api<OnboardingStatus>("/api/dashboard/onboarding/status").then(setStatus).catch(() => undefined);
+    refresh();
+    const id = window.setInterval(refresh, 3000);
+    return () => window.clearInterval(id);
+  }, []);
+  return <section>
+    <header><h2>Connect Your Ring</h2></header>
+    <div className="wizard">
+      <WizardStep number="1" title="Link your ring" done={(status?.rings ?? 0) > 0}>
+        <p>Create a ring token, then put the Webhook URL and Auth Token into CoreApp's Webhook settings.</p>
+        <RingsSetup />
+      </WizardStep>
+      <WizardStep number="2" title="Confirm the ring reaches the gateway" done={Boolean(status?.latest_ring || status?.latest_delivery)}>
+        <p>Send a short voice message from the ring. This panel refreshes every few seconds and only shows metadata.</p>
+        <StatusLine label="Latest ring event" value={status?.latest_ring ? `${status.latest_ring.status}${status.latest_ring.error_code ? ` / ${status.latest_ring.error_code}` : ""} at ${status.latest_ring.created_at}` : "Waiting for a message"} />
+        <StatusLine label="Delivery created" value={status?.latest_delivery ? `${status.latest_delivery.target_kind ?? "agent"} at ${status.latest_delivery.created_at}` : "Waiting for an agent target"} />
+      </WizardStep>
+      <WizardStep number="3" title="Connect your agent and confirm it works" done={Boolean(status?.latest_ack)}>
+        <p>Pick Codex, Claude, or OpenClaw. The gateway encrypts each pending delivery to the connector key you generate locally.</p>
+        <AgentSetup defaultKind="codex" />
+        <StatusLine label="Connected agents" value={String(status?.connected_agents ?? 0)} />
+        <StatusLine label="Latest ack" value={status?.latest_ack ? `${status.latest_ack.status} at ${status.latest_ack.created_at}` : "Waiting for connector ack"} />
+      </WizardStep>
+      <WizardStep number="4" title="Keep it running long term" done={false}>
+        <AgentRunbook />
+      </WizardStep>
+    </div>
+    <div className="setup-panel">
+      <h3>What this website is for</h3>
+      <div className="grid three">
+        <article><span>Connect agents</span><p>Come back here to add or revoke Codex, Claude, OpenClaw, or CLI connectors.</p></article>
+        <article><span>Debug safely</span><p>Use Activity and Settings to inspect metadata. Debug retention is visibly shown and should stay off unless you need it.</p></article>
+        <article><span>Check usage</span><p>The dashboard shows received, delivered, expired, latency, connected agents, and debug status.</p></article>
+      </div>
+    </div>
+  </section>;
+}
+
+function WizardStep({ number, title, done, children }: { number: string; title: string; done: boolean; children: React.ReactNode }) {
+  return <div className={done ? "wizard-step done" : "wizard-step"}>
+    <div className="step-marker">{done ? <CheckCircle size={18} /> : number}</div>
+    <div>
+      <h3>{title}</h3>
+      {children}
+    </div>
+  </div>;
+}
+
+function StatusLine({ label, value }: { label: string; value: string }) {
+  return <div className="status-line"><span>{label}</span><strong>{value}</strong></div>;
 }
 
 function Dashboard() {
@@ -110,6 +183,13 @@ function Dashboard() {
 }
 
 function Rings() {
+  return <section>
+    <header><h2>Rings</h2></header>
+    <RingsSetup showTable />
+  </section>;
+}
+
+function RingsSetup({ showTable = false }: { showTable?: boolean }) {
   const [rows, setRows] = useState<any[]>([]);
   const [created, setCreated] = useState<CreatedRing | null>(null);
   const [name, setName] = useState("Pebble Index Ring");
@@ -134,16 +214,15 @@ function Rings() {
       setBusy(false);
     }
   }
-  return <section>
-    <header><h2>Rings</h2></header>
+  return <>
     <div className="inline-form">
       <label>Ring name<input value={name} onChange={(e) => { setError(null); setName(e.target.value); }} /></label>
       <button disabled={busy} onClick={add}><KeyRound size={16} /> {busy ? "Adding..." : "Add ring"}</button>
     </div>
     {error && <p className="error" role="alert">{error}</p>}
     <CoreAppSettingsGuide created={created} />
-    <Table rows={rows} columns={["name", "created_at", "revoked_at"]} />
-  </section>;
+    {showTable && <Table rows={rows} columns={["name", "created_at", "revoked_at"]} />}
+  </>;
 }
 
 function CoreAppSettingsGuide({ created }: { created: CreatedRing | null }) {
@@ -180,9 +259,16 @@ function CopyField({ label, value, muted = false }: { label: string; value: stri
 }
 
 function Agents() {
+  return <section>
+    <header><h2>Agents</h2></header>
+    <AgentSetup defaultKind="codex" showTable />
+  </section>;
+}
+
+function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; showTable?: boolean }) {
   const [rows, setRows] = useState<any[]>([]);
   const [created, setCreated] = useState<CreatedAgent | null>(null);
-  const [form, setForm] = useState({ kind: "codex", name: "Local Codex", encryption_public_key: "" });
+  const [form, setForm] = useState({ kind: defaultKind, name: defaultName(defaultKind), encryption_public_key: "" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = () => api<{ rows: any[] }>("/api/dashboard/agents").then((r) => setRows(r.rows));
@@ -217,8 +303,7 @@ function Agents() {
   }
   const serverUrl = window.location.origin;
   const keygenCommand = "pnpm --filter @pebble/agent-cli dev -- keygen";
-  return <section>
-    <header><h2>Agents</h2></header>
+  return <>
     <div className="setup-panel">
       <div>
         <h3>Add a local connector</h3>
@@ -233,7 +318,7 @@ function Agents() {
           <strong>2. Create the connector</strong>
           <div className="settings-grid">
             <label>Kind
-              <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+              <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value, name: defaultName(e.target.value) })}>
                 <option value="codex">codex</option>
                 <option value="cli">cli</option>
                 <option value="claude">claude</option>
@@ -251,8 +336,8 @@ function Agents() {
       </div>
     </div>
     {created && <AgentTokenPanel created={created} serverUrl={serverUrl} />}
-    <Table rows={rows} columns={["kind", "name", "last_seen_at", "revoked_at"]} />
-  </section>;
+    {showTable && <Table rows={rows} columns={["kind", "name", "last_seen_at", "revoked_at"]} />}
+  </>;
 }
 
 function AgentTokenPanel({ created, serverUrl }: { created: CreatedAgent; serverUrl: string }) {
@@ -263,8 +348,16 @@ function AgentTokenPanel({ created, serverUrl }: { created: CreatedAgent; server
     </div>
     <CopyField label="Agent token" value={created.agent_token} />
     <CopyField label="Save local config" value={`pnpm --filter @pebble/agent-cli dev -- login --server ${serverUrl} --token ${created.agent_token}`} />
-    <CopyField label="Start listening" value="pnpm --filter @pebble/agent-cli dev -- listen" />
+    <CopyField label="Start smoke-test listener" value="pnpm --filter @pebble/agent-cli dev -- listen --agent print" />
+    <p className="hint">After the smoke test works, run with <code>--agent codex</code>, <code>--agent claude</code>, or <code>--agent openclaw</code>.</p>
   </div>;
+}
+
+function defaultName(kind: string): string {
+  if (kind === "codex") return "Local Codex";
+  if (kind === "claude") return "Local Claude";
+  if (kind === "openclaw") return "Local OpenClaw";
+  return "Local CLI";
 }
 
 function ActivityPage() {
@@ -287,6 +380,71 @@ function Settings() {
   </section>;
 }
 
+function AgentRunbook() {
+  return <div className="runbook-grid">
+    <article>
+      <span>Codex</span>
+      <p>Install and authenticate the Codex CLI locally, then keep the connector running in the repo you want Codex to work in.</p>
+      <CopyField label="Run Codex connector" value="pnpm --filter @pebble/agent-cli dev -- listen --agent codex" />
+      <p className="hint">For long-running use, run this in tmux, screen, launchd, systemd, or a small always-on machine.</p>
+    </article>
+    <article>
+      <span>Claude</span>
+      <p>Install and authenticate the Claude CLI locally. The connector passes transcripts with <code>claude -p</code> by default.</p>
+      <CopyField label="Run Claude connector" value="pnpm --filter @pebble/agent-cli dev -- listen --agent claude" />
+      <p className="hint">Override the command with <code>PEBBLE_CLAUDE_COMMAND</code> and <code>PEBBLE_CLAUDE_ARGS_JSON</code> if your local CLI uses a different shape.</p>
+    </article>
+    <article>
+      <span>OpenClaw</span>
+      <p>Install the OpenClaw command line tool locally. The connector uses <code>openclaw run</code> by default.</p>
+      <CopyField label="Run OpenClaw connector" value="pnpm --filter @pebble/agent-cli dev -- listen --agent openclaw" />
+      <p className="hint">Override with <code>PEBBLE_OPENCLAW_COMMAND</code> and <code>PEBBLE_OPENCLAW_ARGS_JSON</code> for your local OpenClaw setup.</p>
+    </article>
+  </div>;
+}
+
+function DataProtection() {
+  return <section className="content-page">
+    <h2>How We Protect Your Data</h2>
+    <div className="setup-panel">
+      <h3>Default storage</h3>
+      <p>Message contents are encrypted before they are written to SQLite. Each pending delivery is encrypted to the selected connector's public key. The private key stays on the machine running your connector.</p>
+      <p>When a connector claims a delivery, the encrypted payload is deleted from the active queue by default. If a delivery is never claimed, it expires and is deleted after the configured TTL.</p>
+    </div>
+    <div className="setup-panel">
+      <h3>Logs and metrics</h3>
+      <p>Activity logs keep metadata: timestamps, event type, status, target kind, payload size, latency, and error codes. They do not include transcript or audio content by default.</p>
+      <p>Debug retention is separate and should be enabled only when you are actively diagnosing an issue.</p>
+    </div>
+    <div className="setup-panel">
+      <h3>Important limitation</h3>
+      <p>The gateway receives plaintext during webhook processing because the current mobile app sends plaintext transcription data to the webhook. This is encrypted short-term storage, not full end-to-end encryption from the ring or phone.</p>
+    </div>
+  </section>;
+}
+
+function Risks() {
+  return <section className="content-page">
+    <h2>What Are The Risks?</h2>
+    <div className="setup-panel">
+      <h3>Someone gets your ring or can trigger it</h3>
+      <p>If someone can trigger your configured ring action, they may be able to send voice commands to your connected agent. Treat ring transcripts as untrusted input. Revoke the ring token immediately if the ring is lost.</p>
+    </div>
+    <div className="setup-panel">
+      <h3>Someone gets a ring or agent token</h3>
+      <p>A ring token can submit webhook messages. An agent token can claim encrypted deliveries for its connector. Tokens are shown once, stored only as hashes, and should be rotated or revoked if exposed.</p>
+    </div>
+    <div className="setup-panel">
+      <h3>Local agent actions</h3>
+      <p>Codex, Claude, and OpenClaw run locally under your account. The gateway can deliver a transcript, but the local agent tooling decides what actions require confirmation. Do not configure agents to execute shell commands blindly from voice input.</p>
+    </div>
+    <div className="setup-panel">
+      <h3>Hosted gateway trust</h3>
+      <p>The hosted gateway sees plaintext transiently during ingest. Pending contents are encrypted at rest, but operators and process memory remain part of the trust boundary until mobile-side encryption exists.</p>
+    </div>
+  </section>;
+}
+
 function Table({ rows, columns }: { rows: any[]; columns: string[] }) {
   return <div className="table"><table><thead><tr>{columns.map((c) => <th key={c}>{c.replaceAll("_", " ")}</th>)}</tr></thead><tbody>
     {rows.map((row, i) => <tr key={row.id ?? i}>{columns.map((c) => <td key={c}>{String(row[c] ?? "")}</td>)}</tr>)}
@@ -294,6 +452,14 @@ function Table({ rows, columns }: { rows: any[]; columns: string[] }) {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
+
+function parsePage(pathname: string): Page {
+  const page = pathname.split("/")[1];
+  if (["onboarding", "dashboard", "rings", "agents", "activity", "settings", "data", "risks"].includes(page)) {
+    return page as Page;
+  }
+  return "onboarding";
+}
 
 function formatApiError(error: string | undefined, status: number): string {
   switch (error) {
