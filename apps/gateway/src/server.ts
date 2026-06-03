@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/migrate.js";
 import { healthRoutes } from "./routes/health.js";
@@ -16,6 +17,8 @@ import { expirePendingDeliveries } from "./services/queue/expire.js";
 import { ShutdownManager } from "./services/shutdown.js";
 
 export function createApp() {
+  const webRoot = fileURLToPath(new URL("../dist-web", import.meta.url));
+  const webIndex = fileURLToPath(new URL("../dist-web/index.html", import.meta.url));
   const config = loadConfig();
   const db = openDb(config.databaseUrl);
   expirePendingDeliveries(db);
@@ -31,8 +34,8 @@ export function createApp() {
   app.route("/api/agent", agentRepliesRoutes(db, config));
   app.route("/api/provision", provisionRoutes(db, config));
   app.route("/api/dashboard", dashboardApiRoutes(db, config));
-  app.use("/assets/*", serveStatic({ root: "./dist-web" }));
-  app.get("*", serveStatic({ path: "./dist-web/index.html" }));
+  app.use("/assets/*", serveStatic({ root: webRoot }));
+  app.get("*", serveStatic({ path: webIndex }));
 
   const expirationInterval = setInterval(() => expirePendingDeliveries(db), 60_000);
   return {
