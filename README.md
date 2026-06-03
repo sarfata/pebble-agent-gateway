@@ -63,7 +63,7 @@ The gateway also accepts `Authorization: Bearer`, `X-Pebble-Token`, `X-Webhook-T
 Optionally generate a local connector key. This is recommended: the private key stays on your machine, and the dashboard only receives the public key, so queued payloads are encrypted to your connector.
 
 ```bash
-pnpm --filter @pebble/agent-cli dev -- keygen
+pnpm --filter @pebble/agent-cli dev keygen
 ```
 
 You can also leave the public key blank when creating a connector. In that mode the gateway encrypts pending messages at rest with `APP_ENCRYPTION_KEY`, decrypts them during claim, and still deletes the stored ciphertext on claim or expiry. This is easier to set up, but weaker than connector-side encryption because the gateway can decrypt pending messages.
@@ -71,21 +71,21 @@ You can also leave the public key blank when creating a connector. In that mode 
 Create a connector in the dashboard with kind `codex`, `claude`, `openclaw`, or `cli`, then copy the one-time `ag_live_...` token and store local config:
 
 ```bash
-pnpm --filter @pebble/agent-cli dev -- login --server https://your-gateway.example.com --token ag_live_...
+pnpm --filter @pebble/agent-cli dev login --server https://your-gateway.example.com --token ag_live_...
 ```
 
 Smoke test without invoking an external agent:
 
 ```bash
-pnpm --filter @pebble/agent-cli dev -- listen --agent print
+pnpm --filter @pebble/agent-cli dev listen --agent print
 ```
 
 Run a real local agent connector:
 
 ```bash
-pnpm --filter @pebble/agent-cli dev -- listen --agent codex
-pnpm --filter @pebble/agent-cli dev -- listen --agent claude
-pnpm --filter @pebble/agent-cli dev -- listen --agent openclaw
+pnpm --filter @pebble/agent-cli dev listen --agent codex
+pnpm --filter @pebble/agent-cli dev listen --agent claude
+pnpm --filter @pebble/agent-cli dev listen --agent openclaw
 ```
 
 Default local commands:

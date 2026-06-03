@@ -48,7 +48,7 @@ const connectorOptions: ConnectorOption[] = [
     bestFor: "Software projects where Codex should work inside your checkout.",
     setup: "Run the listener from the repo you want Codex to work on. The transcript is passed to `codex exec`, so normal Codex sandbox and approval behavior still applies.",
     prerequisite: "Install and authenticate the Codex CLI on the machine where this listener runs.",
-    command: "pnpm --filter @pebble/agent-cli dev -- listen --agent codex",
+    command: "pnpm --filter @pebble/agent-cli dev listen --agent codex",
     voicePrefix: "Codex, fix the failing test",
     icon: Code2
   },
@@ -60,7 +60,7 @@ const connectorOptions: ConnectorOption[] = [
     bestFor: "Non-coding or mixed tasks you want handled by Claude locally.",
     setup: "Run the listener on the machine where you use Claude. The transcript is passed to `claude -p` and the CLI output is shown in the listener.",
     prerequisite: "Install and authenticate the Claude CLI before starting the listener.",
-    command: "pnpm --filter @pebble/agent-cli dev -- listen --agent claude",
+    command: "pnpm --filter @pebble/agent-cli dev listen --agent claude",
     voicePrefix: "Claude, summarize my last note",
     icon: Brain
   },
@@ -72,7 +72,7 @@ const connectorOptions: ConnectorOption[] = [
     bestFor: "Custom local workflows backed by OpenClaw.",
     setup: "Run the listener on the machine that has your OpenClaw workflows. Configure the OpenClaw command with environment variables if your local command differs.",
     prerequisite: "Install OpenClaw locally and confirm its command works from your terminal.",
-    command: "pnpm --filter @pebble/agent-cli dev -- listen --agent openclaw",
+    command: "pnpm --filter @pebble/agent-cli dev listen --agent openclaw",
     voicePrefix: "OpenClaw, run my morning workflow",
     icon: Wrench
   },
@@ -84,7 +84,7 @@ const connectorOptions: ConnectorOption[] = [
     bestFor: "Testing the ring, gateway, encryption, and ack path.",
     setup: "Run this first when debugging. It prints the transcript and acks the delivery without calling Codex, Claude, or OpenClaw.",
     prerequisite: "No external agent is required.",
-    command: "pnpm --filter @pebble/agent-cli dev -- listen --agent print",
+    command: "pnpm --filter @pebble/agent-cli dev listen --agent print",
     voicePrefix: "Test message",
     icon: Terminal
   }
@@ -431,7 +431,7 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
     await refresh();
   }
   const serverUrl = window.location.origin;
-  const keygenCommand = "pnpm --filter @pebble/agent-cli dev -- keygen";
+  const keygenCommand = "pnpm --filter @pebble/agent-cli dev keygen";
   const activeRows = rows.filter((row) => !row.revoked_at);
   const selected = connectorOptions.find((option) => option.kind === form.kind) ?? connectorOptions[0];
   const createdConnector = connectorOptions.find((option) => option.kind === createdKind) ?? selected;
@@ -530,7 +530,7 @@ function AgentTokenPanel({ created, serverUrl, connector }: { created: CreatedAg
       <p>Copy this token now. The gateway stores only a hash, so it cannot show the token again later.</p>
     </div>
     <CopyField label="Agent token" value={created.agent_token} />
-    <CopyField label="Save local config" value={`pnpm --filter @pebble/agent-cli dev -- login --server ${serverUrl} --token ${created.agent_token}`} />
+    <CopyField label="Save local config" value={`pnpm --filter @pebble/agent-cli dev login --server ${serverUrl} --token ${created.agent_token}`} />
     <CopyField label={`Start ${connector.title} listener`} value={connector.command} />
     <p className="hint">{connector.prerequisite} Say <code>{connector.voicePrefix}</code> to test routing.</p>
   </div>;
@@ -579,19 +579,19 @@ function AgentRunbook() {
     <article>
       <span>Codex</span>
       <p>Install and authenticate the Codex CLI locally, then keep the connector running in the repo you want Codex to work in.</p>
-      <CopyField label="Run Codex connector" value="pnpm --filter @pebble/agent-cli dev -- listen --agent codex" />
+      <CopyField label="Run Codex connector" value="pnpm --filter @pebble/agent-cli dev listen --agent codex" />
       <p className="hint">For long-running use, run this in tmux, screen, launchd, systemd, or a small always-on machine.</p>
     </article>
     <article>
       <span>Claude</span>
       <p>Install and authenticate the Claude CLI locally. The connector passes transcripts with <code>claude -p</code> by default.</p>
-      <CopyField label="Run Claude connector" value="pnpm --filter @pebble/agent-cli dev -- listen --agent claude" />
+      <CopyField label="Run Claude connector" value="pnpm --filter @pebble/agent-cli dev listen --agent claude" />
       <p className="hint">Override the command with <code>PEBBLE_CLAUDE_COMMAND</code> and <code>PEBBLE_CLAUDE_ARGS_JSON</code> if your local CLI uses a different shape.</p>
     </article>
     <article>
       <span>OpenClaw</span>
       <p>Install the OpenClaw command line tool locally. The connector uses <code>openclaw run</code> by default.</p>
-      <CopyField label="Run OpenClaw connector" value="pnpm --filter @pebble/agent-cli dev -- listen --agent openclaw" />
+      <CopyField label="Run OpenClaw connector" value="pnpm --filter @pebble/agent-cli dev listen --agent openclaw" />
       <p className="hint">Override with <code>PEBBLE_OPENCLAW_COMMAND</code> and <code>PEBBLE_OPENCLAW_ARGS_JSON</code> for your local OpenClaw setup.</p>
     </article>
   </div>;
