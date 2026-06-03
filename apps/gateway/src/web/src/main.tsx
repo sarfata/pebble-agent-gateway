@@ -10,7 +10,10 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers }
   });
-  if (!response.ok) throw new Error(`${path}: ${response.status}`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(formatApiError(body?.error, response.status));
+  }
   return response.json() as Promise<T>;
 }
 
@@ -18,25 +21,48 @@ function App() {
   const [page, setPage] = useState<Page>((location.pathname.split("/")[1] as Page) || "dashboard");
   const [ready, setReady] = useState(false);
   const [login, setLogin] = useState({ email: "", password: "" });
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authBusy, setAuthBusy] = useState<"login" | "signup" | null>(null);
 
   useEffect(() => {
     api("/api/dashboard/me").then(() => setReady(true)).catch(() => setReady(false));
   }, []);
 
   async function submitAuth(mode: "login" | "signup") {
-    await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify(login) });
-    setReady(true);
+    setAuthError(null);
+    if (!login.email.trim()) {
+      setAuthError("Enter an email address.");
+      return;
+    }
+    if (!login.password) {
+      setAuthError("Enter a password.");
+      return;
+    }
+    if (mode === "signup" && login.password.length < 8) {
+      setAuthError("Password must be at least 8 characters.");
+      return;
+    }
+    setAuthBusy(mode);
+    try {
+      await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify(login) });
+      setReady(true);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Authentication failed.");
+    } finally {
+      setAuthBusy(null);
+    }
   }
 
   if (!ready) {
     return <main className="auth">
       <section>
         <h1>Pebble Agent Gateway</h1>
-        <input placeholder="email" value={login.email} onChange={(e) => setLogin({ ...login, email: e.target.value })} />
-        <input placeholder="password" type="password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} />
+        <input placeholder="email" value={login.email} onChange={(e) => { setAuthError(null); setLogin({ ...login, email: e.target.value }); }} />
+        <input placeholder="password" type="password" value={login.password} onChange={(e) => { setAuthError(null); setLogin({ ...login, password: e.target.value }); }} />
+        {authError && <p className="error" role="alert">{authError}</p>}
         <div className="row">
-          <button onClick={() => submitAuth("login")}>Log in</button>
-          <button className="secondary" onClick={() => submitAuth("signup")}>Sign up</button>
+          <button disabled={authBusy !== null} onClick={() => submitAuth("login")}>{authBusy === "login" ? "Logging in..." : "Log in"}</button>
+          <button disabled={authBusy !== null} className="secondary" onClick={() => submitAuth("signup")}>{authBusy === "signup" ? "Signing up..." : "Sign up"}</button>
         </div>
       </section>
     </main>;
@@ -144,3 +170,22 @@ function Table({ rows, columns }: { rows: any[]; columns: string[] }) {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
+
+function formatApiError(error: string | undefined, status: number): string {
+  switch (error) {
+    case "email_required":
+      return "Enter an email address.";
+    case "password_too_short":
+      return "Password must be at least 8 characters.";
+    case "email_already_registered":
+      return "That email is already registered. Log in instead.";
+    case "invalid_credentials":
+      return "Email or password is incorrect.";
+    case "signups_disabled":
+      return "Signups are disabled on this gateway.";
+    case "invalid_signup":
+      return "Enter a valid email and a password of at least 8 characters.";
+    default:
+      return `Request failed (${status}).`;
+  }
+}

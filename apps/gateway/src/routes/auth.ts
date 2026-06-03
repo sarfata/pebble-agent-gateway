@@ -12,7 +12,10 @@ export function authRoutes(db: Db, config: GatewayConfig): Hono {
   app.post("/signup", async (c) => {
     if (!config.signupsEnabled) return c.json({ ok: false, error: "signups_disabled" }, 403);
     const body = await c.req.json<{ email: string; password: string }>();
-    if (!body.email || !body.password || body.password.length < 8) return c.json({ ok: false, error: "invalid_signup" }, 400);
+    if (!body.email) return c.json({ ok: false, error: "email_required" }, 400);
+    if (!body.password || body.password.length < 8) return c.json({ ok: false, error: "password_too_short" }, 400);
+    const existing = db.prepare(`select id from users where email = ?`).get(body.email.toLowerCase());
+    if (existing) return c.json({ ok: false, error: "email_already_registered" }, 409);
     const count = db.prepare(`select count(*) as n from users`).get() as { n: number };
     const userId = `usr_${nanoid(21)}`;
     db.prepare(`insert into users (id, email, password_hash, role, created_at) values (?, ?, ?, ?, ?)`)

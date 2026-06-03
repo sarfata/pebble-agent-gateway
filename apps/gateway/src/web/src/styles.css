@@ -18,6 +18,10 @@ button {
   gap: 0.45rem;
   cursor: pointer;
 }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
 button.secondary { background: white; color: #1d5f49; }
 input {
   border: 1px solid #c9d2c7;
@@ -89,8 +93,16 @@ pre {
   padding: 1rem;
 }
 label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; color: #40524a; }
+.error {
+  margin: 0;
+  border: 1px solid #d36a58;
+  background: #fff1ee;
+  color: #8f2d1f;
+  border-radius: 6px;
+  padding: 0.65rem 0.75rem;
+}
 @media (max-width: 760px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { display: block; min-height: 100vh; }
   aside { border-right: 0; border-bottom: 1px solid #dfe5dc; }
   aside button { width: auto; display: inline-flex; }
   main { padding: 1rem; }
