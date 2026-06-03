@@ -12,6 +12,13 @@ program
   .description("Proof-of-life connector for Pebble Agent Gateway")
   .version("0.1.0");
 
+program.command("keygen")
+  .description("Generate or print the local connector encryption public key")
+  .action(() => {
+    const keypair = ensureKeypair();
+    console.log(keypair.publicKey);
+  });
+
 program.command("login")
   .requiredOption("--server <url>")
   .requiredOption("--token <token>")

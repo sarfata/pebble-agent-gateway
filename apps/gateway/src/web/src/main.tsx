@@ -5,6 +5,7 @@ import "./styles.css";
 
 type Page = "dashboard" | "rings" | "agents" | "activity" | "settings";
 type CreatedRing = { ok: boolean; ring_id: string; ingest_token: string; webhook_url: string };
+type CreatedAgent = { ok: boolean; agent_id: string; agent_token: string };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -180,21 +181,90 @@ function CopyField({ label, value, muted = false }: { label: string; value: stri
 
 function Agents() {
   const [rows, setRows] = useState<any[]>([]);
-  const [created, setCreated] = useState<any>(null);
+  const [created, setCreated] = useState<CreatedAgent | null>(null);
+  const [form, setForm] = useState({ kind: "codex", name: "Local Codex", encryption_public_key: "" });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const refresh = () => api<{ rows: any[] }>("/api/dashboard/agents").then((r) => setRows(r.rows));
   useEffect(() => { void refresh(); }, []);
   async function add() {
-    const kind = prompt("Kind: cli/openclaw/claude/codex", "cli") || "cli";
-    const name = prompt("Agent name", "Local CLI") || "Local CLI";
-    const encryption_public_key = prompt("Public encryption key") || "";
-    setCreated(await api("/api/dashboard/agents", { method: "POST", body: JSON.stringify({ kind, name, encryption_public_key }) }));
-    refresh();
+    setError(null);
+    if (!form.name.trim()) {
+      setError("Enter a connector name.");
+      return;
+    }
+    if (!form.encryption_public_key.trim()) {
+      setError("Paste the public key printed by the keygen command.");
+      return;
+    }
+    setBusy(true);
+    try {
+      setCreated(await api<CreatedAgent>("/api/dashboard/agents", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: form.kind,
+          name: form.name.trim(),
+          encryption_public_key: form.encryption_public_key.trim()
+        })
+      }));
+      setForm({ ...form, encryption_public_key: "" });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create connector.");
+    } finally {
+      setBusy(false);
+    }
   }
+  const serverUrl = window.location.origin;
+  const keygenCommand = "pnpm --filter @pebble/agent-cli dev -- keygen";
   return <section>
-    <header><h2>Agents</h2><button onClick={add}><Bot size={16} /> Add connector</button></header>
-    {created && <pre>{JSON.stringify(created, null, 2)}</pre>}
+    <header><h2>Agents</h2></header>
+    <div className="setup-panel">
+      <div>
+        <h3>Add a local connector</h3>
+        <p>The connector keeps its private key on your machine. The gateway only needs the public key so it can encrypt pending messages for that connector.</p>
+      </div>
+      <div className="step-list">
+        <div>
+          <strong>1. Generate a local key</strong>
+          <CopyField label="Run in this repo" value={keygenCommand} />
+        </div>
+        <div>
+          <strong>2. Create the connector</strong>
+          <div className="settings-grid">
+            <label>Kind
+              <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+                <option value="codex">codex</option>
+                <option value="cli">cli</option>
+                <option value="claude">claude</option>
+                <option value="openclaw">openclaw</option>
+              </select>
+            </label>
+            <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+          </div>
+          <label className="wide-field">Public encryption key
+            <textarea value={form.encryption_public_key} onChange={(e) => setForm({ ...form, encryption_public_key: e.target.value })} placeholder="Paste the key printed by keygen" />
+          </label>
+          {error && <p className="error" role="alert">{error}</p>}
+          <button disabled={busy} onClick={add}><Bot size={16} /> {busy ? "Creating..." : "Create connector"}</button>
+        </div>
+      </div>
+    </div>
+    {created && <AgentTokenPanel created={created} serverUrl={serverUrl} />}
     <Table rows={rows} columns={["kind", "name", "last_seen_at", "revoked_at"]} />
   </section>;
+}
+
+function AgentTokenPanel({ created, serverUrl }: { created: CreatedAgent; serverUrl: string }) {
+  return <div className="setup-panel success-panel">
+    <div>
+      <h3>Connector created</h3>
+      <p>Copy this token now. The gateway stores only a hash, so it cannot show the token again later.</p>
+    </div>
+    <CopyField label="Agent token" value={created.agent_token} />
+    <CopyField label="Save local config" value={`pnpm --filter @pebble/agent-cli dev -- login --server ${serverUrl} --token ${created.agent_token}`} />
+    <CopyField label="Start listening" value="pnpm --filter @pebble/agent-cli dev -- listen" />
+  </div>;
 }
 
 function ActivityPage() {

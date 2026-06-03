@@ -6,7 +6,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; }
-button, input { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button {
   border: 1px solid #1d5f49;
   background: #1d5f49;
@@ -33,6 +33,20 @@ input {
   border-radius: 6px;
   padding: 0.6rem 0.7rem;
   width: 100%;
+}
+select, textarea {
+  border: 1px solid #c9d2c7;
+  border-radius: 6px;
+  padding: 0.6rem 0.7rem;
+  width: 100%;
+  background: white;
+  color: #17201a;
+}
+textarea {
+  min-height: 5.2rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.86rem;
 }
 .auth {
   min-height: 100vh;
@@ -161,6 +175,21 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; co
 }
 .hint {
   font-size: 0.9rem;
+}
+.step-list {
+  display: grid;
+  gap: 1rem;
+}
+.step-list strong {
+  display: block;
+  margin-bottom: 0.45rem;
+}
+.wide-field {
+  max-width: none;
+}
+.success-panel {
+  border-color: #b9d9c5;
+  background: #fbfffc;
 }
 @media (max-width: 760px) {
   .shell { display: block; min-height: 100vh; }

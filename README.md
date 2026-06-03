@@ -81,17 +81,17 @@ For debugging, every ingest response includes a `request_id`, and the server emi
 
 ## Add an agent connector
 
-Generate a local keypair:
+Generate a local keypair and copy the printed public key:
 
 ```bash
-pnpm --filter @pebble/agent-cli dev -- login --server https://example.com --token temporary
+pnpm --filter @pebble/agent-cli dev -- keygen
 ```
 
-Create an agent connector in the dashboard with the printed public key. Store the displayed `ag_live_...` token locally, then run:
+Create an agent connector in the dashboard with that public key. The gateway will display an `ag_live_...` token once. Store it locally, then start the connector:
 
 ```bash
-pebble-agent-cli login --server https://example.com --token ag_live_...
-pebble-agent-cli listen
+pnpm --filter @pebble/agent-cli dev -- login --server https://example.com --token ag_live_...
+pnpm --filter @pebble/agent-cli dev -- listen
 ```
 
 ## Configure ntfy replies
