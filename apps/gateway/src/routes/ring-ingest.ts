@@ -115,13 +115,23 @@ function formToIngestBody(form: FormData): unknown {
       size: audio.size
     };
   }
+  const recordedAt = normalizeRecordedAt(getFormString(form, ["recorded_at", "recordedAt", "created_at", "timestamp"]));
   return {
     message_id: getFormString(form, ["message_id", "messageId", "source_message_id", "id"]) ?? `mobile-${Date.now()}`,
-    recorded_at: getFormString(form, ["recorded_at", "recordedAt", "created_at", "timestamp"]) ?? new Date().toISOString(),
+    recorded_at: recordedAt,
     transcript: getFormString(form, ["transcript", "transcription", "text", "message", "body"]) ?? "",
     audio_url: getFormString(form, ["audio_url", "audioUrl"]) ?? null,
     metadata
   };
+}
+
+function normalizeRecordedAt(value: string | null): string {
+  if (!value) return new Date().toISOString();
+  if (/^\d+$/.test(value)) {
+    const timestamp = Number(value);
+    if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString();
+  }
+  return value;
 }
 
 function getTokenFromJsonFormFields(form: FormData): string | null {

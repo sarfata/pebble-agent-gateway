@@ -153,7 +153,7 @@ describe("gateway integration", () => {
     const app = new Hono().route("/api/ring", ringIngestRoutes(db, config, hub, () => false));
     const form = new FormData();
     form.set("client", "ring");
-    form.set("recordedAt", "2026-06-02T19:22:00.000Z");
+    form.set("recordedAt", "1780428120000");
     form.set("transcription", "Codex, handle this observed mobile webhook");
     form.set("audio", new File([new Uint8Array([1, 2, 3])], "audio.mp4", { type: "audio/mp4" }));
     const response = await app.request("/api/ring/ingest", {
