@@ -322,7 +322,16 @@ function RingsSetup({ showTable = false }: { showTable?: boolean }) {
     </div>
     {error && <p className="error" role="alert">{error}</p>}
     <CoreAppSettingsGuide created={created} />
-    {showTable && <Table rows={rows} columns={["name", "created_at", "revoked_at"]} actions={(row) => (
+    {showTable && <Table
+      rows={rows}
+      columns={["name", "last_message_received_at", "created_at", "revoked_at"]}
+      labels={{ last_message_received_at: "last message received" }}
+      render={{
+        last_message_received_at: (value) => value ? formatDateTime(String(value)) : "Never",
+        created_at: (value) => formatDateTime(String(value)),
+        revoked_at: (value) => value ? formatDateTime(String(value)) : ""
+      }}
+      actions={(row) => (
       <button className="danger-button" disabled={Boolean(row.revoked_at)} onClick={() => revoke(row)}>
         {row.revoked_at ? "Revoked" : "Revoke"}
       </button>
@@ -607,10 +616,33 @@ function Risks() {
   </section>;
 }
 
-function Table({ rows, columns, actions }: { rows: any[]; columns: string[]; actions?: (row: any) => React.ReactNode }) {
-  return <div className="table"><table><thead><tr>{columns.map((c) => <th key={c}>{c.replaceAll("_", " ")}</th>)}{actions && <th>actions</th>}</tr></thead><tbody>
-    {rows.map((row, i) => <tr key={row.id ?? i}>{columns.map((c) => <td key={c}>{String(row[c] ?? "")}</td>)}{actions && <td>{actions(row)}</td>}</tr>)}
+function Table({
+  rows,
+  columns,
+  actions,
+  labels = {},
+  render = {}
+}: {
+  rows: any[];
+  columns: string[];
+  actions?: (row: any) => React.ReactNode;
+  labels?: Record<string, string>;
+  render?: Record<string, (value: unknown, row: any) => React.ReactNode>;
+}) {
+  return <div className="table"><table><thead><tr>{columns.map((c) => <th key={c}>{labels[c] ?? c.replaceAll("_", " ")}</th>)}{actions && <th>actions</th>}</tr></thead><tbody>
+    {rows.map((row, i) => <tr key={row.id ?? i}>{columns.map((c) => <td key={c}>{render[c]?.(row[c], row) ?? String(row[c] ?? "")}</td>)}{actions && <td>{actions(row)}</td>}</tr>)}
   </tbody></table></div>;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

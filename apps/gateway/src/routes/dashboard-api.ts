@@ -103,7 +103,20 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
 
   app.get("/rings", (c) => {
     const user = c.get("user") as AuthUser;
-    return c.json({ rows: db.prepare(`select id, name, created_at, revoked_at from rings where user_id = ? order by created_at desc`).all(user.id) });
+    const rows = db.prepare(`
+      select
+        rings.id,
+        rings.name,
+        rings.created_at,
+        rings.revoked_at,
+        max(ring_events.received_at) as last_message_received_at
+      from rings
+      left join ring_events on ring_events.ring_id = rings.id
+      where rings.user_id = ?
+      group by rings.id
+      order by rings.created_at desc
+    `).all(user.id);
+    return c.json({ rows });
   });
 
   app.post("/rings", async (c) => {
