@@ -23,13 +23,11 @@ program.command("keygen")
 program.command("login")
   .requiredOption("--server <url>")
   .requiredOption("--token <token>")
-  .description("Store gateway connection settings and generate a local encryption keypair")
+  .description("Store gateway connection settings")
   .action((options: { server: string; token: string }) => {
-    const keypair = ensureKeypair();
     saveConfig({ server: options.server.replace(/\/$/, ""), token: options.token });
     console.log("Saved Pebble Agent Gateway config");
-    console.log(`Public encryption key: ${keypair.publicKey}`);
-    console.log("Register this public key when creating the connector in the dashboard.");
+    console.log("Run keygen separately if you want connector-side encryption.");
   });
 
 program.command("listen")
@@ -38,7 +36,6 @@ program.command("listen")
   .description("Connect to SSE, claim deliveries, decrypt, run the selected local agent, ack, and optionally reply")
   .action((options: { agent: AgentMode; reply?: string }) => {
     const config = loadConfig();
-    const keypair = ensureKeypair();
     const client = new PebbleGatewayClient(config.server, config.token);
     if (!["print", "codex", "claude", "openclaw"].includes(options.agent)) {
       throw new Error("--agent must be print, codex, claude, or openclaw");
@@ -49,8 +46,8 @@ program.command("listen")
     console.log("Waiting for messages...");
     connectDeliveryEvents(config.server, config.token, async (event) => {
       try {
-        const envelope = await client.claim(event.delivery_id);
-        const payload = decryptEnvelope<PlaintextDeliveryPayload>(envelope, keypair.privateKey);
+        const claimed = await client.claim(event.delivery_id);
+        const payload = claimed.payload ?? decryptEnvelope<PlaintextDeliveryPayload>(claimed.encrypted_payload, ensureKeypair().privateKey);
         console.log(`\n[${payload.recorded_at}] ${payload.transcript}`);
         const result = await runAgent(options.agent, payload);
         if (result) console.log(result);

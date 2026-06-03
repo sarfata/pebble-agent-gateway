@@ -10,6 +10,7 @@ import type { AuthRing } from "../auth.js";
 import type { RingIngestRequest } from "@pebble/protocol";
 import type { DeliveryStreamHub } from "./stream.js";
 import { logInfo, logWarn } from "../logger.js";
+import { encryptAppPayload } from "../crypto/app-payload.js";
 
 export function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryStreamHub, ring: AuthRing, input: RingIngestRequest) {
   const now = new Date();
@@ -97,7 +98,9 @@ export function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryS
         audio: input.audio_url ? { url: input.audio_url } : null,
         metadata: input.metadata
       };
-      const encrypted = encryptEnvelope(plaintext, agent.encryption_public_key);
+      const encrypted = agent.encryption_public_key.trim()
+        ? encryptEnvelope(plaintext, agent.encryption_public_key)
+        : encryptAppPayload(config, plaintext);
       const result = db.prepare(`
         insert into agent_deliveries (
           event_id, user_id, agent_id, status, encrypted_payload_json, encrypted_payload_deleted_at,

@@ -198,7 +198,7 @@ function Onboarding() {
         <StatusLine label="Delivery created" value={status?.latest_delivery ? `${status.latest_delivery.target_kind ?? "agent"} at ${status.latest_delivery.created_at}` : "Waiting for an agent target"} />
       </WizardStep>
       <WizardStep number="3" title="Connect your agent and confirm it works" done={Boolean(status?.latest_ack)}>
-        <p>Pick Codex, Claude, or OpenClaw. The gateway encrypts each pending delivery to the connector key you generate locally.</p>
+        <p>Pick Codex, Claude, or OpenClaw. A connector key is recommended for stronger local decryption, but it is optional for setup.</p>
         <AgentSetup defaultKind="codex" />
         <StatusLine label="Connected agents" value={String(status?.connected_agents ?? 0)} />
         <StatusLine label="Latest ack" value={status?.latest_ack ? `${status.latest_ack.status} at ${status.latest_ack.created_at}` : "Waiting for connector ack"} />
@@ -394,10 +394,6 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
       setError("Enter a connector name.");
       return;
     }
-    if (!form.encryption_public_key.trim()) {
-      setError("Paste the public key printed by the keygen command.");
-      return;
-    }
     setBusy(true);
     try {
       setCreated(await api<CreatedAgent>("/api/dashboard/agents", {
@@ -430,7 +426,7 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
     <div className="setup-panel">
       <div>
         <h3>Add a local connector</h3>
-        <p>The connector keeps its private key on your machine. The gateway only needs the public key so it can encrypt pending messages for that connector.</p>
+        <p>A local encryption key is recommended but optional. With a key, pending messages are encrypted to your connector and decrypted locally. Without one, the gateway still encrypts pending messages at rest with its app key, then decrypts them during claim.</p>
       </div>
       {activeRows.length > 0 && <div className="routing-note">
         <strong>Before adding another connector</strong>
@@ -438,8 +434,9 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
       </div>}
       <div className="step-list">
         <div>
-          <strong>1. Generate a local key</strong>
+          <strong>1. Optional: generate a local key</strong>
           <CopyField label="Run in this repo" value={keygenCommand} />
+          <p className="hint">This improves privacy because the gateway cannot decrypt queued connector payloads after ingest. Skip this if the command does not work on your machine yet.</p>
         </div>
         <div>
           <strong>2. Choose what should handle messages</strong>
@@ -459,16 +456,17 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
           <div className="settings-grid">
             <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
           </div>
-          <label className="wide-field">Public encryption key
-            <textarea value={form.encryption_public_key} onChange={(e) => setForm({ ...form, encryption_public_key: e.target.value })} placeholder="Paste the key printed by keygen" />
+          <label className="wide-field">Public encryption key <span className="optional-label">optional, recommended</span>
+            <textarea value={form.encryption_public_key} onChange={(e) => setForm({ ...form, encryption_public_key: e.target.value })} placeholder="Paste the key printed by keygen, or leave blank to use gateway-managed encryption" />
           </label>
+          <p className="hint">Leaving this blank is easier to set up. The tradeoff is that the hosted gateway can decrypt pending messages during claim, though it still does not store transcripts in plaintext at rest.</p>
           {error && <p className="error" role="alert">{error}</p>}
           <button disabled={busy} onClick={add}><Bot size={16} /> {busy ? "Creating..." : "Create connector"}</button>
         </div>
       </div>
     </div>
     {created && <AgentTokenPanel created={created} serverUrl={serverUrl} />}
-    {showTable && <Table rows={rows} columns={["kind", "name", "last_seen_at", "revoked_at"]} actions={(row) => (
+    {showTable && <Table rows={rows} columns={["kind", "name", "encryption", "last_seen_at", "revoked_at"]} actions={(row) => (
       <button className="danger-button" disabled={Boolean(row.revoked_at)} onClick={() => revoke(row)}>
         {row.revoked_at ? "Revoked" : "Revoke"}
       </button>
@@ -579,7 +577,7 @@ function DataProtection() {
     <h2>How We Protect Your Data</h2>
     <div className="setup-panel">
       <h3>Default storage</h3>
-      <p>Message contents are encrypted before they are written to SQLite. Each pending delivery is encrypted to the selected connector's public key. The private key stays on the machine running your connector.</p>
+      <p>Message contents are encrypted before they are written to SQLite. With a connector public key, each pending delivery is encrypted to that key and decrypted locally. Without a connector key, the gateway encrypts pending contents with its app key and decrypts them during claim.</p>
       <p>When a connector claims a delivery, the encrypted payload is deleted from the active queue by default. If a delivery is never claimed, it expires and is deleted after the configured TTL.</p>
     </div>
     <div className="setup-panel">

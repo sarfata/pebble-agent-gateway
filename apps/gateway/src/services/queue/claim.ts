@@ -1,8 +1,11 @@
-import type { EncryptedPayloadEnvelope } from "@pebble/protocol";
+import { ENVELOPE_ALG, type EncryptedPayloadEnvelope, type PlaintextDeliveryPayload } from "@pebble/protocol";
 import type { Db } from "../../db/migrate.js";
 import type { GatewayConfig } from "../../config.js";
 import type { AuthAgent } from "../auth.js";
 import { logActivity } from "../activity-log.js";
+import { APP_PAYLOAD_ALG, decryptAppPayload, type AppEncryptedPayloadEnvelope } from "../crypto/app-payload.js";
+
+type StoredPayloadEnvelope = EncryptedPayloadEnvelope | AppEncryptedPayloadEnvelope;
 
 export function claimDelivery(db: Db, config: GatewayConfig, agent: AuthAgent, deliveryId: number) {
   const now = new Date().toISOString();
@@ -13,7 +16,10 @@ export function claimDelivery(db: Db, config: GatewayConfig, agent: AuthAgent, d
     if (row.status !== "pending") return { status: 409 as const };
     if (row.expires_at <= now) return { status: 410 as const };
     if (!row.encrypted_payload_json) return { status: 410 as const };
-    const encrypted_payload = JSON.parse(row.encrypted_payload_json) as EncryptedPayloadEnvelope;
+    const storedPayload = JSON.parse(row.encrypted_payload_json) as StoredPayloadEnvelope;
+    const claimPayload = storedPayload.alg === APP_PAYLOAD_ALG
+      ? { payload: decryptAppPayload<PlaintextDeliveryPayload>(config, storedPayload) }
+      : { encrypted_payload: assertAgentEncryptedPayload(storedPayload) };
     db.prepare(`
       update agent_deliveries
       set status = 'claimed', claimed_at = ?, encrypted_payload_json = ?, encrypted_payload_deleted_at = ?
@@ -28,9 +34,14 @@ export function claimDelivery(db: Db, config: GatewayConfig, agent: AuthAgent, d
       status: config.deletePayloadOnClaim ? "claimed_payload_deleted" : "claimed"
     });
     updateRingEventStatus(db, row.event_id);
-    return { status: 200 as const, event_id: row.event_id, encrypted_payload };
+    return { status: 200 as const, event_id: row.event_id, ...claimPayload };
   });
   return tx();
+}
+
+function assertAgentEncryptedPayload(envelope: StoredPayloadEnvelope): EncryptedPayloadEnvelope {
+  if (envelope.alg !== ENVELOPE_ALG) throw new Error(`unsupported payload alg ${envelope.alg}`);
+  return envelope;
 }
 
 export function ackDelivery(db: Db, agent: AuthAgent, deliveryId: number, status: string) {

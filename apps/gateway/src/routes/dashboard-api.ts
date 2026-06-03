@@ -138,7 +138,20 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
 
   app.get("/agents", (c) => {
     const user = c.get("user") as AuthUser;
-    return c.json({ rows: db.prepare(`select id, kind, name, encryption_public_key, last_seen_at, created_at, revoked_at from agent_connectors where user_id = ? order by created_at desc`).all(user.id) });
+    return c.json({ rows: db.prepare(`
+      select
+        id,
+        kind,
+        name,
+        encryption_public_key,
+        case when encryption_public_key = '' then 'gateway-managed' else 'connector key' end as encryption,
+        last_seen_at,
+        created_at,
+        revoked_at
+      from agent_connectors
+      where user_id = ?
+      order by created_at desc
+    `).all(user.id) });
   });
 
   app.post("/agents", async (c) => {

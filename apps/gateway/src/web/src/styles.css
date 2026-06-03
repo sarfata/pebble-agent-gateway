@@ -339,6 +339,11 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; co
 .hint {
   font-size: 0.9rem;
 }
+.optional-label {
+  color: #627069;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
 .step-list {
   display: grid;
   gap: 1rem;

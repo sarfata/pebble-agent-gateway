@@ -14,7 +14,7 @@ export function agentDeliveryRoutes(db: Db, config: GatewayConfig, isDraining: (
     if (!agent) return c.json({ ok: false, error: "unauthorized" }, 401);
     const result = claimDelivery(db, config, agent, Number(c.req.param("id")));
     if (result.status !== 200) return c.json({ ok: false, error: "claim_unavailable" }, result.status);
-    return c.json({ ok: true, delivery_id: Number(c.req.param("id")), event_id: result.event_id, encrypted_payload: result.encrypted_payload });
+    return c.json({ ok: true, delivery_id: Number(c.req.param("id")), event_id: result.event_id, encrypted_payload: result.encrypted_payload, payload: result.payload });
   });
 
   app.post("/deliveries/:id/ack", async (c) => {

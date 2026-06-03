@@ -65,6 +65,33 @@ describe("gateway integration", () => {
     expect(ackDelivery(db, { id: "agt_test", user_id: "usr_test", kind: "codex", name: "Codex" }, deliveryId, "processed").status).toBe(200);
   });
 
+  it("supports gateway-managed encryption when an agent has no public key", () => {
+    const { db, config } = seed();
+    db.prepare(`update agent_connectors set encryption_public_key = '' where id = 'agt_test'`).run();
+    const hub = new DeliveryStreamHub();
+    const result = enqueueRingMessage(db, config, hub, { id: "ring_test", user_id: "usr_test", name: "Ring" }, {
+      message_id: "pebble-msg-no-key",
+      recorded_at: "2026-06-02T19:30:00.000Z",
+      transcript: "Codex, test gateway managed encryption",
+      audio_url: null,
+      metadata: { locale: "en-US" }
+    });
+    expect(result.ok).toBe(true);
+    const stored = db.prepare(`select encrypted_payload_json from agent_deliveries where id = ?`)
+      .get(result.deliveries[0].delivery_id) as { encrypted_payload_json: string };
+    expect(stored.encrypted_payload_json).toContain("app-key-aes-256-gcm");
+    expect(stored.encrypted_payload_json).not.toContain("gateway managed encryption");
+
+    const claimed = claimDelivery(db, config, { id: "agt_test", user_id: "usr_test", kind: "codex", name: "Codex" }, result.deliveries[0].delivery_id);
+    expect(claimed.status).toBe(200);
+    if (claimed.status !== 200) throw new Error("claim failed");
+    expect(claimed.payload?.transcript).toBe("Codex, test gateway managed encryption");
+    expect(claimed.encrypted_payload).toBeUndefined();
+    const afterClaim = db.prepare(`select encrypted_payload_json from agent_deliveries where id = ?`)
+      .get(result.deliveries[0].delivery_id) as { encrypted_payload_json: string | null };
+    expect(afterClaim.encrypted_payload_json).toBeNull();
+  });
+
   it("expires pending encrypted payloads", () => {
     const { db } = seed();
     db.prepare(`insert into ring_events (id, user_id, ring_id, source_message_id, message_hash, target_hint, payload_bytes, audio_bytes, received_at, expires_at, status, created_at) values ('evt_old', 'usr_test', 'ring_test', 'old', 'hash', 'codex', 10, null, '2026-01-01T00:00:00.000Z', '2026-01-01T01:00:00.000Z', 'queued', '2026-01-01T00:00:00.000Z')`).run();

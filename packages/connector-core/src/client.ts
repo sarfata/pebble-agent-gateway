@@ -1,4 +1,8 @@
-import type { EncryptedPayloadEnvelope } from "@pebble/protocol";
+import type { EncryptedPayloadEnvelope, PlaintextDeliveryPayload } from "@pebble/protocol";
+
+export type ClaimedDeliveryPayload =
+  | { encrypted_payload: EncryptedPayloadEnvelope; payload?: never }
+  | { encrypted_payload?: never; payload: PlaintextDeliveryPayload };
 
 export class PebbleGatewayClient {
   constructor(
@@ -6,14 +10,14 @@ export class PebbleGatewayClient {
     private readonly token: string
   ) {}
 
-  async claim(deliveryId: number): Promise<EncryptedPayloadEnvelope> {
+  async claim(deliveryId: number): Promise<ClaimedDeliveryPayload> {
     const response = await fetch(`${this.serverUrl}/api/agent/deliveries/${deliveryId}/claim`, {
       method: "POST",
       headers: { Authorization: `Bearer ${this.token}` }
     });
     if (!response.ok) throw new Error(`claim failed: ${response.status}`);
-    const body = await response.json() as { encrypted_payload: EncryptedPayloadEnvelope };
-    return body.encrypted_payload;
+    const body = await response.json() as ClaimedDeliveryPayload;
+    return body;
   }
 
   async ack(deliveryId: number, status = "processed"): Promise<void> {

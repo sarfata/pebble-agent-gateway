@@ -2,7 +2,7 @@
 
 Pebble Agent Gateway is an open-source, self-hostable bridge between Pebble Index ring voice webhooks and local AI agent connectors.
 
-The gateway receives Pebble/CoreApp webhook events, authenticates a ring token, stores pending deliveries durably in SQLite, encrypts each pending payload to the target connector public key, and lets local connectors claim work over HTTP/SSE.
+The gateway receives Pebble/CoreApp webhook events, authenticates a ring token, stores pending deliveries durably in SQLite, encrypts each pending payload before storage, and lets local connectors claim work over HTTP/SSE.
 
 Source: https://github.com/sarfata/pebble-agent-gateway
 
@@ -10,7 +10,7 @@ Source: https://github.com/sarfata/pebble-agent-gateway
 
 By default, message contents are not stored in plaintext at rest.
 
-Pending messages are encrypted before they are written to SQLite. Each pending delivery is encrypted to the target connector's public key. When a connector claims a delivery, the encrypted payload is deleted from the active queue. If no connector claims it within the configured TTL, the payload is deleted and the message is marked expired.
+Pending messages are encrypted before they are written to SQLite. When a connector public key is configured, each pending delivery is encrypted to that key and decrypted locally by the connector. If no connector key is configured, the gateway encrypts the pending delivery with `APP_ENCRYPTION_KEY` and decrypts it during claim. When a connector claims a delivery, the encrypted payload is deleted from the active queue. If no connector claims it within the configured TTL, the payload is deleted and the message is marked expired.
 
 The dashboard keeps metadata-only activity logs: timestamps, delivery status, target connector type, payload size, latency, and error codes. Transcripts and audio are not retained unless debug mode is explicitly enabled.
 
@@ -60,11 +60,13 @@ The gateway also accepts `Authorization: Bearer`, `X-Pebble-Token`, `X-Webhook-T
 
 ## Connect An Agent
 
-Generate a local connector key. The private key stays on your machine; the dashboard only receives the public key.
+Optionally generate a local connector key. This is recommended: the private key stays on your machine, and the dashboard only receives the public key, so queued payloads are encrypted to your connector.
 
 ```bash
 pnpm --filter @pebble/agent-cli dev -- keygen
 ```
+
+You can also leave the public key blank when creating a connector. In that mode the gateway encrypts pending messages at rest with `APP_ENCRYPTION_KEY`, decrypts them during claim, and still deletes the stored ciphertext on claim or expiry. This is easier to set up, but weaker than connector-side encryption because the gateway can decrypt pending messages.
 
 Create a connector in the dashboard with kind `codex`, `claude`, `openclaw`, or `cli`, then copy the one-time `ag_live_...` token and store local config:
 
