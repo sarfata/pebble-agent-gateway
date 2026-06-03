@@ -32,6 +32,8 @@ type ConnectorOption = {
   subtitle: string;
   description: string;
   bestFor: string;
+  setup: string;
+  prerequisite: string;
   command: string;
   voicePrefix: string;
   icon: typeof Bot;
@@ -44,6 +46,8 @@ const connectorOptions: ConnectorOption[] = [
     subtitle: "Coding work in a local repo",
     description: "Claims ring messages and passes the transcript to the local Codex CLI. Use this for code edits, tests, reviews, and repo automation.",
     bestFor: "Software projects where Codex should work inside your checkout.",
+    setup: "Run the listener from the repo you want Codex to work on. The transcript is passed to `codex exec`, so normal Codex sandbox and approval behavior still applies.",
+    prerequisite: "Install and authenticate the Codex CLI on the machine where this listener runs.",
     command: "pnpm --filter @pebble/agent-cli dev -- listen --agent codex",
     voicePrefix: "Codex, fix the failing test",
     icon: Code2
@@ -54,6 +58,8 @@ const connectorOptions: ConnectorOption[] = [
     subtitle: "General assistant workflows",
     description: "Claims ring messages and passes the transcript to a local Claude CLI command. Use this for writing, summarizing, planning, and general assistant tasks.",
     bestFor: "Non-coding or mixed tasks you want handled by Claude locally.",
+    setup: "Run the listener on the machine where you use Claude. The transcript is passed to `claude -p` and the CLI output is shown in the listener.",
+    prerequisite: "Install and authenticate the Claude CLI before starting the listener.",
     command: "pnpm --filter @pebble/agent-cli dev -- listen --agent claude",
     voicePrefix: "Claude, summarize my last note",
     icon: Brain
@@ -64,6 +70,8 @@ const connectorOptions: ConnectorOption[] = [
     subtitle: "OpenClaw local automations",
     description: "Claims ring messages and passes the transcript to your local OpenClaw runner. Use this when OpenClaw owns the downstream automation.",
     bestFor: "Custom local workflows backed by OpenClaw.",
+    setup: "Run the listener on the machine that has your OpenClaw workflows. Configure the OpenClaw command with environment variables if your local command differs.",
+    prerequisite: "Install OpenClaw locally and confirm its command works from your terminal.",
     command: "pnpm --filter @pebble/agent-cli dev -- listen --agent openclaw",
     voicePrefix: "OpenClaw, run my morning workflow",
     icon: Wrench
@@ -74,6 +82,8 @@ const connectorOptions: ConnectorOption[] = [
     subtitle: "Print and ack only",
     description: "Claims, decrypts, prints, and acks messages without invoking an external agent. Use this first to confirm delivery works.",
     bestFor: "Testing the ring, gateway, encryption, and ack path.",
+    setup: "Run this first when debugging. It prints the transcript and acks the delivery without calling Codex, Claude, or OpenClaw.",
+    prerequisite: "No external agent is required.",
     command: "pnpm --filter @pebble/agent-cli dev -- listen --agent print",
     voicePrefix: "Test message",
     icon: Terminal
@@ -382,6 +392,7 @@ function Agents() {
 function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; showTable?: boolean }) {
   const [rows, setRows] = useState<any[]>([]);
   const [created, setCreated] = useState<CreatedAgent | null>(null);
+  const [createdKind, setCreatedKind] = useState<ConnectorKind | null>(null);
   const initialKind = isConnectorKind(defaultKind) ? defaultKind : "cli";
   const [form, setForm] = useState<{ kind: ConnectorKind; name: string; encryption_public_key: string }>({ kind: initialKind, name: defaultName(initialKind), encryption_public_key: "" });
   const [error, setError] = useState<string | null>(null);
@@ -404,6 +415,7 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
           encryption_public_key: form.encryption_public_key.trim()
         })
       }));
+      setCreatedKind(form.kind);
       setForm({ ...form, encryption_public_key: "" });
       await refresh();
     } catch (err) {
@@ -422,6 +434,7 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
   const keygenCommand = "pnpm --filter @pebble/agent-cli dev -- keygen";
   const activeRows = rows.filter((row) => !row.revoked_at);
   const selected = connectorOptions.find((option) => option.kind === form.kind) ?? connectorOptions[0];
+  const createdConnector = connectorOptions.find((option) => option.kind === createdKind) ?? selected;
   return <>
     <div className="setup-panel">
       <div>
@@ -434,25 +447,37 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
       </div>}
       <div className="step-list">
         <div>
-          <strong>1. Optional: generate a local key</strong>
-          <CopyField label="Run in this repo" value={keygenCommand} />
-          <p className="hint">This improves privacy because the gateway cannot decrypt queued connector payloads after ingest. Skip this if the command does not work on your machine yet.</p>
-        </div>
-        <div>
-          <strong>2. Choose what should handle messages</strong>
+          <strong>1. Which agent?</strong>
           <ConnectorChooser selected={form.kind} onSelect={(kind) => setForm({ ...form, kind, name: defaultName(kind) })} />
           <div className="connector-preview">
             <div>
-              <span>Preview</span>
+              <span>{selected.subtitle}</span>
               <h4>{selected.title} connector</h4>
               <p>{selected.bestFor}</p>
             </div>
-            <CopyField label="Run command after creating" value={selected.command} />
+            <p>{selected.setup}</p>
+            <p className="hint">{selected.prerequisite}</p>
+          </div>
+        </div>
+        <div>
+          <strong>2. Optional: generate a local encryption key</strong>
+          <CopyField label="Optional privacy command" value={keygenCommand} />
+          <p className="hint">This improves privacy because the gateway cannot decrypt queued connector payloads after ingest. Skip this if the command does not work on your machine yet.</p>
+        </div>
+        <div>
+          <strong>3. Preview the listener step</strong>
+          <div className="connector-preview">
+            <div>
+              <span>After creating the connector</span>
+              <h4>Run {selected.title}</h4>
+              <p>{selected.setup}</p>
+            </div>
+            <CopyField label={`${selected.title} listener command`} value={selected.command} />
             <p className="hint">Try saying: <code>{selected.voicePrefix}</code></p>
           </div>
         </div>
         <div>
-          <strong>3. Create the connector</strong>
+          <strong>4. Create the connector</strong>
           <div className="settings-grid">
             <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
           </div>
@@ -465,7 +490,7 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
         </div>
       </div>
     </div>
-    {created && <AgentTokenPanel created={created} serverUrl={serverUrl} />}
+    {created && <AgentTokenPanel created={created} serverUrl={serverUrl} connector={createdConnector} />}
     {showTable && <Table rows={rows} columns={["kind", "name", "encryption", "last_seen_at", "revoked_at"]} actions={(row) => (
       <button className="danger-button" disabled={Boolean(row.revoked_at)} onClick={() => revoke(row)}>
         {row.revoked_at ? "Revoked" : "Revoke"}
@@ -498,7 +523,7 @@ function ConnectorChooser({ selected, onSelect }: { selected: ConnectorKind; onS
   </div>;
 }
 
-function AgentTokenPanel({ created, serverUrl }: { created: CreatedAgent; serverUrl: string }) {
+function AgentTokenPanel({ created, serverUrl, connector }: { created: CreatedAgent; serverUrl: string; connector: ConnectorOption }) {
   return <div className="setup-panel success-panel">
     <div>
       <h3>Connector created</h3>
@@ -506,8 +531,8 @@ function AgentTokenPanel({ created, serverUrl }: { created: CreatedAgent; server
     </div>
     <CopyField label="Agent token" value={created.agent_token} />
     <CopyField label="Save local config" value={`pnpm --filter @pebble/agent-cli dev -- login --server ${serverUrl} --token ${created.agent_token}`} />
-    <CopyField label="Start smoke-test listener" value="pnpm --filter @pebble/agent-cli dev -- listen --agent print" />
-    <p className="hint">After the smoke test works, run with <code>--agent codex</code>, <code>--agent claude</code>, or <code>--agent openclaw</code>.</p>
+    <CopyField label={`Start ${connector.title} listener`} value={connector.command} />
+    <p className="hint">{connector.prerequisite} Say <code>{connector.voicePrefix}</code> to test routing.</p>
   </div>;
 }
 
