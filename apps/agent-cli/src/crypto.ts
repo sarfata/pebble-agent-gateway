@@ -1,5 +1,5 @@
 import { createDecipheriv, createPrivateKey, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, type KeyObject } from "node:crypto";
-import { ENVELOPE_ALG, type EncryptedPayloadEnvelope } from "@pebble/protocol";
+import { ENVELOPE_ALG, type EncryptedPayloadEnvelope } from "./protocol.js";
 
 export type AgentKeypair = {
   publicKey: string;

@@ -20,12 +20,6 @@ importers:
 
   apps/agent-cli:
     dependencies:
-      '@pebble/connector-core':
-        specifier: workspace:*
-        version: link:../../packages/connector-core
-      '@pebble/protocol':
-        specifier: workspace:*
-        version: link:../../packages/protocol
       commander:
         specifier: ^12.1.0
         version: 12.1.0

@@ -11,8 +11,6 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@pebble/connector-core": "workspace:*",
-    "@pebble/protocol": "workspace:*",
     "commander": "^12.1.0",
     "eventsource": "^3.0.2"
   },

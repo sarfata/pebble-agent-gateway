@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import type { PlaintextDeliveryPayload } from "@pebble/protocol";
-import { PebbleGatewayClient, connectDeliveryEvents } from "@pebble/connector-core";
 import { ensureKeypair, loadConfig, saveConfig } from "./keypair.js";
 import { commandHelp, runAgent, type AgentMode } from "./agent-runner.js";
 import { decryptEnvelope } from "./crypto.js";
+import { PebbleGatewayClient } from "./client.js";
+import { connectDeliveryEvents } from "./sse.js";
+import type { PlaintextDeliveryPayload } from "./protocol.js";
 
 const program = new Command();
 
