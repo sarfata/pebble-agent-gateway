@@ -17,17 +17,35 @@ button {
   align-items: center;
   gap: 0.45rem;
   cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+button:hover:not(:disabled) {
+  background: #174937;
+  border-color: #174937;
+}
+button:focus-visible {
+  outline: 3px solid #a9d7c4;
+  outline-offset: 2px;
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 button:disabled {
   cursor: not-allowed;
   opacity: 0.62;
 }
 button.secondary { background: white; color: #1d5f49; }
+button.secondary:hover:not(:disabled) { background: #e8f2ee; color: #174937; border-color: #174937; }
 button.danger-button {
   background: white;
   border-color: #c75c4c;
   color: #9a2e20;
   padding: 0.4rem 0.6rem;
+}
+button.danger-button:hover:not(:disabled) {
+  background: #fff1ee;
+  border-color: #9a2e20;
+  color: #7c2116;
 }
 button.icon-button {
   width: 2.5rem;
@@ -88,6 +106,17 @@ aside {
   padding: 1rem;
 }
 aside h1 { font-size: 1rem; margin: 0 0 1rem; }
+.nav-group {
+  margin-bottom: 1rem;
+}
+.nav-group > span {
+  display: block;
+  margin: 0 0 0.35rem;
+  color: #7a877f;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
 aside button {
   width: 100%;
   justify-content: flex-start;
@@ -95,6 +124,11 @@ aside button {
   background: transparent;
   color: #23352e;
   border-color: transparent;
+}
+aside button:hover:not(:disabled) {
+  background: #f1f6f3;
+  border-color: #d8e7df;
+  color: #174937;
 }
 aside button.active { background: #e8f2ee; border-color: #c7ded5; color: #174937; }
 aside footer {
@@ -204,6 +238,13 @@ article p {
   border-radius: 8px;
   background: white;
 }
+.empty-table {
+  border: 1px solid #dfe5dc;
+  border-radius: 8px;
+  background: white;
+  color: #627069;
+  padding: 0.9rem;
+}
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th, td { text-align: left; padding: 0.7rem; border-bottom: 1px solid #edf0eb; white-space: nowrap; }
 th { color: #617067; font-weight: 600; background: #fbfcfa; }
@@ -278,6 +319,11 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; co
   background: #e8f2ee;
   border-color: #1d5f49;
   box-shadow: inset 0 0 0 1px #1d5f49;
+}
+.connector-card:hover:not(:disabled) {
+  background: #eef6f2;
+  border-color: #9fcab8;
+  color: #17201a;
 }
 .connector-icon {
   width: 2.2rem;
@@ -449,6 +495,7 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; co
 .wizard-step.done {
   border-color: #b9d9c5;
   background: #fbfffc;
+  padding: 0.75rem 1rem;
 }
 .wizard-step h3 {
   margin: 0 0 0.25rem;
@@ -458,6 +505,14 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; co
   margin: 0 0 0.75rem;
   color: #5c6d65;
   line-height: 1.45;
+}
+.wizard-step.done h3 {
+  margin-bottom: 0.1rem;
+}
+.wizard-step.done .step-summary {
+  margin: 0;
+  color: #627069;
+  font-size: 0.9rem;
 }
 .step-marker {
   width: 2.2rem;

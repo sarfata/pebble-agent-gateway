@@ -5,7 +5,7 @@ import type { Db } from "../db/migrate.js";
 import type { GatewayConfig } from "../config.js";
 import { authUserMiddleware, type AuthUser } from "../services/auth.js";
 import { generateToken, hashToken } from "../services/crypto/token-hash.js";
-import { encryptAppConfig, publishNtfyReply } from "../services/ntfy.js";
+import { decryptAppConfig, encryptAppConfig, publishNtfyReply } from "../services/ntfy.js";
 
 export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
   const app = new Hono();
@@ -104,6 +104,27 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
     return c.json({ rows });
   });
 
+  app.get("/responses", (c) => {
+    const user = c.get("user") as AuthUser;
+    const rows = db.prepare(`
+      select id, label, encrypted_config_json, enabled, created_at, updated_at
+      from notification_targets
+      where user_id = ? and kind = 'ntfy'
+      order by enabled desc, updated_at desc
+    `).all(user.id) as Array<{ id: string; label: string; encrypted_config_json: string; enabled: number; created_at: string; updated_at: string }>;
+    return c.json({
+      rows: rows.map((row) => ({
+        id: row.id,
+        kind: "ntfy",
+        label: row.label,
+        url: decryptAppConfig<{ url: string }>(config, row.encrypted_config_json).url,
+        enabled: row.enabled === 1,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      }))
+    });
+  });
+
   app.get("/rings", (c) => {
     const user = c.get("user") as AuthUser;
     const rows = db.prepare(`
@@ -141,7 +162,8 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
 
   app.get("/agents", (c) => {
     const user = c.get("user") as AuthUser;
-    return c.json({ rows: db.prepare(`
+    const settings = db.prepare(`select default_agent_kind from user_settings where user_id = ?`).get(user.id) as { default_agent_kind: string | null } | undefined;
+    return c.json({ default_agent_kind: settings?.default_agent_kind ?? "", rows: db.prepare(`
       select
         id,
         kind,
@@ -185,6 +207,13 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
       db.prepare(`insert into notification_targets (id, user_id, kind, label, encrypted_config_json, enabled, created_at, updated_at) values (?, ?, 'ntfy', ?, ?, 1, ?, ?)`)
         .run(`ntfy_${nanoid(21)}`, user.id, body.ntfy_label ?? "ntfy", encryptAppConfig(config, { url: body.ntfy_url }), new Date().toISOString(), new Date().toISOString());
     }
+    return c.json({ ok: true });
+  });
+
+  app.post("/responses/:id/disable", (c) => {
+    const user = c.get("user") as AuthUser;
+    db.prepare(`update notification_targets set enabled = 0, updated_at = ? where id = ? and user_id = ? and kind = 'ntfy'`)
+      .run(new Date().toISOString(), c.req.param("id"), user.id);
     return c.json({ ok: true });
   });
 

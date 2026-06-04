@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, AlertTriangle, Bell, Bot, Brain, CheckCircle, Code2, Copy, Gauge, Github, KeyRound, LoaderCircle, Radio, Settings as SettingsIcon, Shield, Terminal, Wrench } from "lucide-react";
+import { AlertTriangle, Bell, Bot, Brain, CheckCircle, Code2, Copy, Gauge, Github, KeyRound, LoaderCircle, Radio, Shield, Terminal, Wrench } from "lucide-react";
 import "./styles.css";
 
-type Page = "onboarding" | "dashboard" | "rings" | "agents" | "activity" | "settings" | "data" | "risks";
+type Page = "dashboard" | "rings" | "agents" | "responses" | "data" | "risks";
 type ConnectorKind = "codex" | "claude" | "openclaw" | "cli";
 type CreatedRing = { ok: boolean; ring_id: string; ingest_token: string; webhook_url: string };
 type CreatedAgent = { ok: boolean; agent_id: string; agent_token: string };
@@ -26,6 +26,15 @@ type OnboardingStatus = {
   latest_delivery: null | { status: string; target_kind: string | null; created_at: string };
   latest_ack: null | { status: string; delivery_latency_ms: number | null; created_at: string };
   debug_mode: boolean;
+};
+type ResponseTarget = {
+  id: string;
+  kind: "ntfy";
+  label: string;
+  url: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
 };
 type ConnectorOption = {
   kind: ConnectorKind;
@@ -160,40 +169,96 @@ function App() {
   }
 
   const nav = [
-    ["onboarding", CheckCircle, "Setup"],
-    ["dashboard", Gauge, "Dashboard"],
-    ["rings", Radio, "Rings"],
-    ["agents", Bot, "Agents"],
-    ["activity", Activity, "Activity"],
-    ["settings", SettingsIcon, "Settings"],
-    ["data", Shield, "Data"],
-    ["risks", AlertTriangle, "Risks"]
+    { label: "Dashboard", items: [["dashboard", Gauge, "Dashboard"]] },
+    { label: "Configuration", items: [["rings", Radio, "Rings"], ["agents", Bot, "Agents"], ["responses", Bell, "Responses"]] },
+    { label: "Docs", items: [["data", Shield, "Data"], ["risks", AlertTriangle, "Risks"]] }
   ] as const;
 
   return <div className="shell">
     <aside>
       <h1>Pebble Gateway</h1>
-      {nav.map(([id, Icon, label]) => <button key={id} className={page === id ? "active" : ""} onClick={() => { setPage(id); history.pushState(null, "", `/${id}`); }}>
-        <Icon size={18} /> {label}
-      </button>)}
+      {nav.map((group) => <div className="nav-group" key={group.label}>
+        <span>{group.label}</span>
+        {group.items.map(([id, Icon, label]) => <button key={id} className={page === id ? "active" : ""} onClick={() => { setPage(id); history.pushState(null, "", `/${id}`); }}>
+          <Icon size={18} /> {label}
+        </button>)}
+      </div>)}
       <footer>
         <a href="https://github.com/sarfata/pebble-agent-gateway" target="_blank" rel="noreferrer"><Github size={15} /> Open source on GitHub</a>
       </footer>
     </aside>
     <main>
-      {page === "onboarding" && <Onboarding />}
       {page === "dashboard" && <Dashboard />}
       {page === "rings" && <Rings />}
       {page === "agents" && <Agents />}
-      {page === "activity" && <ActivityPage />}
-      {page === "settings" && <Settings />}
+      {page === "responses" && <Responses />}
       {page === "data" && <DataProtection />}
       {page === "risks" && <Risks />}
     </main>
   </div>;
 }
 
-function Onboarding() {
+function SetupChecklist({ status }: { status: OnboardingStatus | null }) {
+  const steps = [
+    {
+      number: "1",
+      title: "Link your ring",
+      done: (status?.rings ?? 0) > 0,
+      summary: status?.rings ? `${status.rings} active ring${status.rings === 1 ? "" : "s"}` : "No ring linked",
+      body: <>
+        <p>Create a ring token, then put the Webhook URL and Auth Token into CoreApp's Webhook settings.</p>
+        <RingsSetup />
+      </>
+    },
+    {
+      number: "2",
+      title: "Confirm the ring reaches the gateway",
+      done: Boolean(status?.latest_ring || status?.latest_delivery),
+      summary: status?.latest_ring ? `${status.latest_ring.status} at ${formatDateTime(status.latest_ring.created_at)}` : "Waiting for first message",
+      body: <>
+        <p>Send a short voice message from the ring. This panel refreshes every few seconds and only shows metadata.</p>
+        <StatusLine label="Latest ring event" value={status?.latest_ring ? `${status.latest_ring.status}${status.latest_ring.error_code ? ` / ${status.latest_ring.error_code}` : ""} at ${formatDateTime(status.latest_ring.created_at)}` : "Waiting for a message"} />
+        <StatusLine label="Delivery created" value={status?.latest_delivery ? `${status.latest_delivery.target_kind ?? "agent"} at ${formatDateTime(status.latest_delivery.created_at)}` : "Waiting for an agent target"} />
+      </>
+    },
+    {
+      number: "3",
+      title: "Configure responses",
+      done: (status?.ntfy_targets ?? 0) > 0,
+      summary: status?.ntfy_targets ? `${status.ntfy_targets} active response target${status.ntfy_targets === 1 ? "" : "s"}` : "No response target",
+      body: <>
+        <p>Add an ntfy topic so agent answers and errors have somewhere to go.</p>
+        <NtfySetup compact />
+      </>
+    },
+    {
+      number: "4",
+      title: "Connect your agent and confirm it works",
+      done: Boolean(status?.latest_ack),
+      summary: status?.latest_ack ? `${status.latest_ack.status} at ${formatDateTime(status.latest_ack.created_at)}` : `${status?.connected_agents ?? 0} connected agent${(status?.connected_agents ?? 0) === 1 ? "" : "s"}`,
+      body: <>
+        <p>Pick Codex, Claude, or OpenClaw. Agent answers are sent back through ntfy by default.</p>
+        <AgentSetup defaultKind="codex" />
+        <StatusLine label="Connected agents" value={String(status?.connected_agents ?? 0)} />
+        <StatusLine label="Latest ack" value={status?.latest_ack ? `${status.latest_ack.status} at ${formatDateTime(status.latest_ack.created_at)}` : "Waiting for connector ack"} />
+      </>
+    },
+    {
+      number: "5",
+      title: "Keep it running long term",
+      done: Boolean(status?.latest_ack),
+      summary: status?.latest_ack ? "Connector has processed a message" : "Start the listener in a persistent terminal",
+      body: <AgentRunbook />
+    }
+  ];
+  return <div className="wizard">
+    {steps.map((step) => <WizardStep key={step.number} number={step.number} title={step.title} done={step.done} summary={step.summary}>
+      {!step.done && step.body}
+    </WizardStep>)}
+  </div>;
+}
+
+function DashboardSetup() {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   useEffect(() => {
     const refresh = () => api<OnboardingStatus>("/api/dashboard/onboarding/status").then(setStatus).catch(() => undefined);
@@ -202,45 +267,25 @@ function Onboarding() {
     return () => window.clearInterval(id);
   }, []);
   return <section>
-    <header><h2>Connect Your Ring</h2></header>
-    <div className="wizard">
-      <WizardStep number="1" title="Link your ring" done={(status?.rings ?? 0) > 0}>
-        <p>Create a ring token, then put the Webhook URL and Auth Token into CoreApp's Webhook settings.</p>
-        <RingsSetup />
-      </WizardStep>
-      <WizardStep number="2" title="Confirm the ring reaches the gateway" done={Boolean(status?.latest_ring || status?.latest_delivery)}>
-        <p>Send a short voice message from the ring. This panel refreshes every few seconds and only shows metadata.</p>
-        <StatusLine label="Latest ring event" value={status?.latest_ring ? `${status.latest_ring.status}${status.latest_ring.error_code ? ` / ${status.latest_ring.error_code}` : ""} at ${status.latest_ring.created_at}` : "Waiting for a message"} />
-        <StatusLine label="Delivery created" value={status?.latest_delivery ? `${status.latest_delivery.target_kind ?? "agent"} at ${status.latest_delivery.created_at}` : "Waiting for an agent target"} />
-      </WizardStep>
-      <WizardStep number="3" title="Connect your agent and confirm it works" done={Boolean(status?.latest_ack)}>
-        <p>First connect a reply notification target, then pick Codex, Claude, or OpenClaw. Agent answers are sent back through the gateway to ntfy by default.</p>
-        <NtfySetup compact />
-        <StatusLine label="ntfy targets" value={String(status?.ntfy_targets ?? 0)} />
-        <AgentSetup defaultKind="codex" />
-        <StatusLine label="Connected agents" value={String(status?.connected_agents ?? 0)} />
-        <StatusLine label="Latest ack" value={status?.latest_ack ? `${status.latest_ack.status} at ${status.latest_ack.created_at}` : "Waiting for connector ack"} />
-      </WizardStep>
-      <WizardStep number="4" title="Keep it running long term" done={false}>
-        <AgentRunbook />
-      </WizardStep>
-    </div>
+    <header><h2>Setup</h2></header>
+    <SetupChecklist status={status} />
     <div className="setup-panel">
       <h3>What this website is for</h3>
       <div className="grid three">
         <article><span>Connect agents</span><p>Come back here to add or revoke Codex, Claude, OpenClaw, or CLI connectors.</p></article>
-        <article><span>Debug safely</span><p>Use Activity and Settings to inspect metadata. Debug retention is visibly shown and should stay off unless you need it.</p></article>
-        <article><span>Check usage</span><p>The dashboard shows received, delivered, expired, latency, connected agents, and debug status.</p></article>
+        <article><span>Debug safely</span><p>Use the dashboard activity feed to inspect metadata. Debug retention should stay off unless you need it.</p></article>
+        <article><span>Check usage</span><p>Once setup is complete, this page becomes usage stats and recent activity.</p></article>
       </div>
     </div>
   </section>;
 }
 
-function WizardStep({ number, title, done, children }: { number: string; title: string; done: boolean; children: React.ReactNode }) {
+function WizardStep({ number, title, done, summary, children }: { number: string; title: string; done: boolean; summary?: string; children: React.ReactNode }) {
   return <div className={done ? "wizard-step done" : "wizard-step"}>
     <div className="step-marker">{done ? <CheckCircle size={18} /> : number}</div>
     <div>
       <h3>{title}</h3>
+      {done && summary && <p className="step-summary">{summary}</p>}
       {children}
     </div>
   </div>;
@@ -252,7 +297,13 @@ function StatusLine({ label, value }: { label: string; value: string }) {
 
 function Dashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-  useEffect(() => { api<DashboardMetrics>("/api/dashboard/metrics").then(setMetrics); }, []);
+  const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  useEffect(() => {
+    api<DashboardMetrics>("/api/dashboard/metrics").then(setMetrics);
+    api<OnboardingStatus>("/api/dashboard/onboarding/status").then(setStatus).catch(() => undefined);
+  }, []);
+  const setupComplete = Boolean((status?.rings ?? 0) > 0 && (status?.ntfy_targets ?? 0) > 0 && status?.latest_ack);
+  if (!setupComplete) return <DashboardSetup />;
   const cards = metrics ? Object.entries(metrics).filter(([key]) => key !== "message_history") : [];
   return <section>
     <header><h2>Dashboard</h2></header>
@@ -263,7 +314,17 @@ function Dashboard() {
         <strong>{String(value ?? "-")}</strong>
       </article>)}
     </div>
+    <RecentActivity />
   </section>;
+}
+
+function RecentActivity() {
+  const [rows, setRows] = useState<any[]>([]);
+  useEffect(() => { api<{ rows: any[] }>("/api/dashboard/activity").then((r) => setRows(r.rows)); }, []);
+  return <div className="section-block">
+    <header><h3>Recent Activity</h3></header>
+    <Table rows={rows.slice(0, 20)} columns={["created_at", "event_type", "ring_name", "agent_name", "status", "delivery_latency_ms", "payload_bytes", "error_code"]} />
+  </div>;
 }
 
 function MessageHistogram({ history }: { history: MessageHistoryPoint[] }) {
@@ -425,13 +486,84 @@ function CopyTextArea({ label, value }: { label: string; value: string }) {
 }
 
 function Agents() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [defaultKind, setDefaultKind] = useState("");
+  const [showSetup, setShowSetup] = useState(false);
+  const [busyDefault, setBusyDefault] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const refresh = () => api<{ rows: any[]; default_agent_kind: string }>("/api/dashboard/agents").then((r) => {
+    setRows(r.rows);
+    setDefaultKind(r.default_agent_kind ?? "");
+  });
+  useEffect(() => { void refresh(); }, []);
+  const activeRows = rows.filter((row) => !row.revoked_at);
+  async function saveDefault() {
+    setBusyDefault(true);
+    setMessage(null);
+    try {
+      await api("/api/dashboard/settings", { method: "POST", body: JSON.stringify({ default_agent_kind: defaultKind }) });
+      setMessage("Default agent saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save default agent.");
+    } finally {
+      setBusyDefault(false);
+    }
+  }
+  async function revoke(row: any) {
+    if (row.revoked_at) return;
+    if (!confirm(`Revoke connector "${row.name}"? Its current agent token will stop working immediately.`)) return;
+    setRevokingId(row.id);
+    setMessage(null);
+    try {
+      await api(`/api/dashboard/agents/${row.id}/revoke`, { method: "POST", body: "{}" });
+      setMessage(`Revoked ${row.name}.`);
+      await refresh();
+    } finally {
+      setRevokingId(null);
+    }
+  }
   return <section>
     <header><h2>Agents</h2></header>
-    <AgentSetup defaultKind="codex" showTable />
+    {activeRows.length > 0 && <div className="setup-panel">
+      <div>
+        <h3>Connected agents</h3>
+        <p>These connectors can claim ring messages. A connector is considered connected when it has checked in recently over SSE.</p>
+      </div>
+      <Table
+        rows={rows}
+        columns={["kind", "name", "encryption", "last_seen_at", "revoked_at"]}
+        render={{
+          last_seen_at: (value) => value ? formatDateTime(String(value)) : "Not seen",
+          revoked_at: (value) => value ? formatDateTime(String(value)) : ""
+        }}
+        actions={(row) => (
+          <button className="danger-button" disabled={Boolean(row.revoked_at) || revokingId === row.id} onClick={() => revoke(row)}>
+            {revokingId === row.id && <LoaderCircle className="spin" size={14} />}
+            {row.revoked_at ? "Revoked" : revokingId === row.id ? "Revoking..." : "Revoke"}
+          </button>
+        )}
+      />
+      <div className="inline-form">
+        <label>Default agent kind
+          <select value={defaultKind} onChange={(e) => setDefaultKind(e.target.value)}>
+            <option value="">First active connector</option>
+            <option value="codex">Codex</option>
+            <option value="claude">Claude</option>
+            <option value="openclaw">OpenClaw</option>
+            <option value="cli">CLI smoke test</option>
+          </select>
+        </label>
+        <button disabled={busyDefault} onClick={saveDefault}>{busyDefault && <LoaderCircle className="spin" size={16} />}{busyDefault ? "Saving..." : "Save default"}</button>
+      </div>
+      {message && <p className="hint action-message">{message}</p>}
+      <button className="secondary" onClick={() => setShowSetup(!showSetup)}><Bot size={16} />{showSetup ? "Hide connector setup" : "Connect another agent"}</button>
+    </div>}
+    {(activeRows.length === 0 || showSetup) && <AgentSetup defaultKind={defaultKind || "codex"} onChanged={refresh} />}
   </section>;
 }
 
-function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; showTable?: boolean }) {
+function AgentSetup({ defaultKind, showTable = false, onChanged }: { defaultKind: string; showTable?: boolean; onChanged?: () => Promise<void> }) {
   const [rows, setRows] = useState<any[]>([]);
   const [created, setCreated] = useState<CreatedAgent | null>(null);
   const [createdKind, setCreatedKind] = useState<ConnectorKind | null>(null);
@@ -465,6 +597,7 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
       setMessage("Connector created. Copy the command now; the token will not be shown again.");
       setForm({ ...form, encryption_public_key: "" });
       await refresh();
+      await onChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create connector.");
     } finally {
@@ -480,6 +613,7 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
       await api(`/api/dashboard/agents/${row.id}/revoke`, { method: "POST", body: "{}" });
       setMessage(`Revoked ${row.name}.`);
       await refresh();
+      await onChanged?.();
     } finally {
       setRevokingId(null);
     }
@@ -647,45 +781,46 @@ function defaultName(kind: ConnectorKind): string {
   return "Local CLI";
 }
 
-function ActivityPage() {
-  const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => { api<{ rows: any[] }>("/api/dashboard/activity").then((r) => setRows(r.rows)); }, []);
-  return <section><h2>Activity</h2><Table rows={rows} columns={["created_at", "event_type", "ring_name", "agent_name", "status", "delivery_latency_ms", "payload_bytes", "error_code"]} /></section>;
-}
-
-function Settings() {
-  const [form, setForm] = useState({ default_agent_kind: "" });
-  const [me, setMe] = useState<{ config: { debugRetention: boolean } } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  useEffect(() => { api<{ config: { debugRetention: boolean } }>("/api/dashboard/me").then(setMe).catch(() => undefined); }, []);
-  async function save() {
-    setBusy(true);
-    setMessage(null);
+function Responses() {
+  const [rows, setRows] = useState<ResponseTarget[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const refresh = () => api<{ rows: ResponseTarget[] }>("/api/dashboard/responses").then((r) => setRows(r.rows));
+  useEffect(() => { void refresh(); }, []);
+  async function disable(row: ResponseTarget) {
+    if (!row.enabled) return;
+    setBusyId(row.id);
     try {
-      await api("/api/dashboard/settings", { method: "POST", body: JSON.stringify(form) });
-      setMessage("Default target saved.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save settings.");
+      await api(`/api/dashboard/responses/${row.id}/disable`, { method: "POST", body: "{}" });
+      await refresh();
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   }
   return <section>
-    <h2>Settings</h2>
-    <label>Default target agent kind<input value={form.default_agent_kind} onChange={(e) => setForm({ ...form, default_agent_kind: e.target.value })} placeholder="cli, claude, codex, openclaw" /></label>
-    <NtfySetup />
-    <button disabled={busy} onClick={save}>{busy && <LoaderCircle className="spin" size={16} />}{busy ? "Saving..." : "Save default target"}</button>
-    {message && <p className="hint action-message">{message}</p>}
-    <div className={me?.config.debugRetention ? "setup-panel danger-panel" : "setup-panel"}>
-      <h3>Debug retention</h3>
-      <p>Status: <strong>{me?.config.debugRetention ? "enabled" : "disabled"}</strong></p>
-      <p className="hint">This MVP does not enable transcript retention from the browser. To debug message contents, set <code>DEBUG_RETENTION=true</code> deliberately in the deployment environment and restart, then turn it off again. The normal activity table remains metadata-only.</p>
+    <header><h2>Responses</h2></header>
+    <div className="setup-panel">
+      <h3>Reply notification targets</h3>
+      <p>Agent answers, local agent errors, no-target errors, and no-listener timeouts are sent to enabled ntfy targets.</p>
+      <Table
+        rows={rows}
+        columns={["label", "url", "enabled", "updated_at"]}
+        render={{
+          enabled: (value) => value ? "Enabled" : "Disabled",
+          updated_at: (value) => formatDateTime(String(value))
+        }}
+        actions={(row) => (
+          <button className="danger-button" disabled={!row.enabled || busyId === row.id} onClick={() => disable(row)}>
+            {busyId === row.id && <LoaderCircle className="spin" size={14} />}
+            {row.enabled ? busyId === row.id ? "Disabling..." : "Disable" : "Disabled"}
+          </button>
+        )}
+      />
     </div>
+    <NtfySetup onSaved={refresh} />
   </section>;
 }
 
-function NtfySetup({ compact = false }: { compact?: boolean }) {
+function NtfySetup({ compact = false, onSaved }: { compact?: boolean; onSaved?: () => Promise<void> }) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState<"save" | "test" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -700,6 +835,7 @@ function NtfySetup({ compact = false }: { compact?: boolean }) {
       await api("/api/dashboard/settings", { method: "POST", body: JSON.stringify({ ntfy_url: url.trim(), ntfy_label: "Phone replies" }) });
       setMessage("ntfy target saved.");
       setUrl("");
+      await onSaved?.();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save ntfy target.");
     } finally {
@@ -815,6 +951,7 @@ function Table({
   labels?: Record<string, string>;
   render?: Record<string, (value: unknown, row: any) => React.ReactNode>;
 }) {
+  if (rows.length === 0) return <div className="empty-table">No rows yet.</div>;
   return <div className="table"><table><thead><tr>{columns.map((c) => <th key={c}>{labels[c] ?? c.replaceAll("_", " ")}</th>)}{actions && <th>actions</th>}</tr></thead><tbody>
     {rows.map((row, i) => <tr key={row.id ?? i}>{columns.map((c) => <td key={c}>{render[c]?.(row[c], row) ?? String(row[c] ?? "")}</td>)}{actions && <td>{actions(row)}</td>}</tr>)}
   </tbody></table></div>;
@@ -835,10 +972,10 @@ createRoot(document.getElementById("root")!).render(<App />);
 
 function parsePage(pathname: string): Page {
   const page = pathname.split("/")[1];
-  if (["onboarding", "dashboard", "rings", "agents", "activity", "settings", "data", "risks"].includes(page)) {
+  if (["dashboard", "rings", "agents", "responses", "data", "risks"].includes(page)) {
     return page as Page;
   }
-  return "onboarding";
+  return "dashboard";
 }
 
 function formatApiError(error: string | undefined, status: number): string {
