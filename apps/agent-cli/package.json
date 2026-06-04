@@ -3,21 +3,21 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "pebble-agent-cli": "dist/main.js"
+    "pebble-agent-cli": "dist-bundle/pebble-agent-cli.cjs"
   },
   "scripts": {
     "dev": "tsx src/main.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && esbuild src/main.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist-bundle/pebble-agent-cli.cjs",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@pebble/connector-core": "workspace:*",
-    "@pebble/gateway": "workspace:*",
     "@pebble/protocol": "workspace:*",
     "commander": "^12.1.0",
     "eventsource": "^3.0.2"
   },
   "devDependencies": {
+    "esbuild": "^0.25.12",
     "tsx": "^4.19.2",
     "vitest": "^2.1.8"
   }

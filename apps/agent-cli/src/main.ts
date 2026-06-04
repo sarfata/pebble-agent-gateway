@@ -2,9 +2,9 @@
 import { Command } from "commander";
 import type { PlaintextDeliveryPayload } from "@pebble/protocol";
 import { PebbleGatewayClient, connectDeliveryEvents } from "@pebble/connector-core";
-import { decryptEnvelope } from "@pebble/gateway/services/crypto/envelope";
 import { ensureKeypair, loadConfig, saveConfig } from "./keypair.js";
 import { commandHelp, runAgent, type AgentMode } from "./agent-runner.js";
+import { decryptEnvelope } from "./crypto.js";
 
 const program = new Command();
 
@@ -32,10 +32,14 @@ program.command("login")
 
 program.command("listen")
   .option("--agent <mode>", "print, codex, claude, or openclaw", "print")
+  .option("--server <url>", "Gateway base URL. If omitted, the saved config is used.")
+  .option("--token <token>", "Agent token. If omitted, the saved config is used.")
   .option("--reply <text>")
   .description("Connect to SSE, claim deliveries, decrypt, run the selected local agent, ack, and optionally reply")
-  .action((options: { agent: AgentMode; reply?: string }) => {
-    const config = loadConfig();
+  .action((options: { agent: AgentMode; server?: string; token?: string; reply?: string }) => {
+    const config = options.server && options.token
+      ? { server: options.server.replace(/\/$/, ""), token: options.token }
+      : loadConfig();
     const client = new PebbleGatewayClient(config.server, config.token);
     if (!["print", "codex", "claude", "openclaw"].includes(options.agent)) {
       throw new Error("--agent must be print, codex, claude, or openclaw");

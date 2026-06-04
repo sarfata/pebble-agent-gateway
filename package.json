@@ -3,9 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "pebble-agent-cli": "apps/agent-cli/dist-bundle/pebble-agent-cli.cjs"
+  },
+  "files": [
+    "README.md",
+    "apps/agent-cli/dist-bundle/pebble-agent-cli.cjs",
+    "apps/agent-cli/package.json",
+    "pnpm-workspace.yaml"
+  ],
   "packageManager": "pnpm@10.0.0",
   "scripts": {
     "build": "pnpm -r build",
+    "prepare": "pnpm build",
     "test": "pnpm -r test",
     "dev:gateway": "pnpm --filter @pebble/gateway dev",
     "dev:cli": "pnpm --filter @pebble/agent-cli dev",

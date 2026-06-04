@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { generateAgentKeypair } from "@pebble/gateway/services/crypto/agent-keys";
+import { generateAgentKeypair } from "./crypto.js";
 
 export const configDir = join(homedir(), ".config", "pebble-agent-gateway");
 export const configPath = join(configDir, "config.json");

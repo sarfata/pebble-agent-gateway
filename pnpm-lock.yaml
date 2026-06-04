@@ -23,9 +23,6 @@ importers:
       '@pebble/connector-core':
         specifier: workspace:*
         version: link:../../packages/connector-core
-      '@pebble/gateway':
-        specifier: workspace:*
-        version: link:../gateway
       '@pebble/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -36,6 +33,9 @@ importers:
         specifier: ^3.0.2
         version: 3.0.7
     devDependencies:
+      esbuild:
+        specifier: ^0.25.12
+        version: 0.25.12
       tsx:
         specifier: ^4.19.2
         version: 4.22.4
