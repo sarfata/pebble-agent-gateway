@@ -36,7 +36,7 @@ program.command("listen")
   .option("--token <token>", "Agent token. If omitted, the saved config is used.")
   .option("--reply <text>")
   .description("Connect to SSE, claim deliveries, decrypt, run the selected local agent, ack, and optionally reply")
-  .action((options: { agent: AgentMode; server?: string; token?: string; reply?: string }) => {
+  .action(async (options: { agent: AgentMode; server?: string; token?: string; reply?: string }) => {
     const config = options.server && options.token
       ? { server: options.server.replace(/\/$/, ""), token: options.token }
       : loadConfig();
@@ -48,7 +48,7 @@ program.command("listen")
     console.log(`Agent mode: ${options.agent}`);
     console.log(`Runner: ${commandHelp(options.agent)}`);
     console.log("Waiting for messages...");
-    connectDeliveryEvents(config.server, config.token, async (event) => {
+    const source = connectDeliveryEvents(config.server, config.token, async (event) => {
       try {
         const claimed = await client.claim(event.delivery_id);
         const payload = claimed.payload ?? decryptEnvelope<PlaintextDeliveryPayload>(claimed.encrypted_payload, ensureKeypair().privateKey);
@@ -62,6 +62,20 @@ program.command("listen")
         console.error(`Failed delivery ${event.delivery_id}:`, error);
       }
     });
+    await keepListeningUntilShutdown(source);
   });
 
 program.parse();
+
+async function keepListeningUntilShutdown(source: { close: () => void }): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const interval = setInterval(() => undefined, 60_000);
+    const shutdown = () => {
+      clearInterval(interval);
+      source.close();
+      resolve();
+    };
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
+  });
+}
