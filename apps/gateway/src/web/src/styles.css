@@ -306,6 +306,53 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; max-width: 520px; co
   padding: 0.85rem;
   margin-top: 0.75rem;
 }
+.preview-command {
+  border: 1px dashed #b8c7bd;
+  border-radius: 6px;
+  background: #f1f4f0;
+  color: #617067;
+  padding: 0.65rem 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+.reply-panel {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid #d8e2d5;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 0.85rem;
+  margin-bottom: 1rem;
+}
+.reply-panel.compact {
+  margin-top: 0.75rem;
+}
+.reply-heading {
+  display: flex;
+  align-items: start;
+  gap: 0.65rem;
+}
+.reply-heading svg {
+  color: #1d5f49;
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+.reply-heading strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+.reply-heading p {
+  margin: 0;
+  color: #5c6d65;
+  line-height: 1.45;
+}
+.ntfy-form {
+  margin-bottom: 0;
+}
+.ntfy-form .row {
+  align-items: end;
+}
 .connector-preview h4 {
   margin: 0.15rem 0;
   font-size: 1rem;

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { ensureKeypair, loadConfig, saveConfig } from "./keypair.js";
-import { commandHelp, runAgent, type AgentMode } from "./agent-runner.js";
+import { commandHelp, defaultPromptTemplate, runAgent, type AgentChannel, type AgentMode } from "./agent-runner.js";
 import { decryptEnvelope } from "./crypto.js";
 import { PebbleGatewayClient } from "./client.js";
 import { connectDeliveryEvents } from "./sse.js";
@@ -35,9 +35,12 @@ program.command("listen")
   .option("--agent <mode>", "print, codex, claude, or openclaw", "print")
   .option("--server <url>", "Gateway base URL. If omitted, the saved config is used.")
   .option("--token <token>", "Agent token. If omitted, the saved config is used.")
-  .option("--reply <text>")
-  .description("Connect to SSE, claim deliveries, decrypt, run the selected local agent, ack, and optionally reply")
-  .action(async (options: { agent: AgentMode; server?: string; token?: string; reply?: string }) => {
+  .option("-p, --prompt <template>", "Prompt template passed to the local agent. Supports {{transcript}}, {{recorded_at}}, {{event_id}}, {{ring_id}}, and {{source_message_id}}.", defaultPromptTemplate)
+  .option("--channel <mode>", "oneshot or local-context", "oneshot")
+  .option("--reply <text>", "Send this fixed reply instead of the local agent output.")
+  .option("--no-send-reply", "Do not send replies back through the gateway.")
+  .description("Connect to SSE, claim deliveries, decrypt, run the selected local agent, ack, and send the agent answer back")
+  .action(async (options: { agent: AgentMode; server?: string; token?: string; prompt: string; channel: AgentChannel; reply?: string; sendReply: boolean }) => {
     const config = options.server && options.token
       ? { server: options.server.replace(/\/$/, ""), token: options.token }
       : loadConfig();
@@ -45,20 +48,29 @@ program.command("listen")
     if (!["print", "codex", "claude", "openclaw"].includes(options.agent)) {
       throw new Error("--agent must be print, codex, claude, or openclaw");
     }
+    if (!["oneshot", "local-context"].includes(options.channel)) {
+      throw new Error("--channel must be oneshot or local-context");
+    }
     console.log("Connected to Pebble Agent Gateway");
     console.log(`Agent mode: ${options.agent}`);
+    console.log(`Channel: ${options.channel}`);
     console.log(`Runner: ${commandHelp(options.agent)}`);
+    if (options.sendReply) console.log("Replies: agent output is sent back through the gateway");
     console.log("Waiting for messages...");
     const source = connectDeliveryEvents(config.server, config.token, async (event) => {
       try {
         const claimed = await client.claim(event.delivery_id);
         const payload = claimed.payload ?? decryptEnvelope<PlaintextDeliveryPayload>(claimed.encrypted_payload, ensureKeypair().privateKey);
         console.log(`\n[${payload.recorded_at}] ${payload.transcript}`);
-        const result = await runAgent(options.agent, payload);
+        const result = await runAgent(options.agent, payload, { promptTemplate: options.prompt, channel: options.channel });
         if (result) console.log(result);
         await client.ack(event.delivery_id);
         console.log(`Acked delivery ${event.delivery_id}`);
-        if (options.reply) await client.reply(event.event_id, event.delivery_id, options.reply);
+        const replyText = replyForDelivery(options, result, event.delivery_id);
+        if (replyText) {
+          await client.reply(event.event_id, event.delivery_id, replyText);
+          console.log(`Sent reply for delivery ${event.delivery_id}`);
+        }
       } catch (error) {
         console.error(`Failed delivery ${event.delivery_id}:`, error);
       }
@@ -79,4 +91,11 @@ async function keepListeningUntilShutdown(source: { close: () => void }): Promis
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
   });
+}
+
+function replyForDelivery(options: { agent: AgentMode; reply?: string; sendReply: boolean }, result: string, deliveryId: number): string | null {
+  if (!options.sendReply) return null;
+  if (options.reply) return options.reply;
+  if (options.agent === "print") return `Pebble Agent Gateway received and acked delivery ${deliveryId}.`;
+  return result.trim() || `${options.agent} completed delivery ${deliveryId}.`;
 }

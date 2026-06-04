@@ -7,6 +7,7 @@ export const configDir = join(homedir(), ".config", "pebble-agent-gateway");
 export const configPath = join(configDir, "config.json");
 export const cursorPath = join(configDir, "cursor.json");
 export const keyPath = join(configDir, "agent-key.json");
+export const conversationPath = join(configDir, "conversation.json");
 
 export type CliConfig = {
   server: string;

@@ -22,7 +22,7 @@ The web app starts with a guided setup:
 
 1. Link your ring by creating a ring token and configuring CoreApp's Webhook URL and Auth Token fields.
 2. Confirm the ring works by sending a test message and watching the metadata-only delivery status.
-3. Connect a local agent connector and confirm it claims and acks a delivery.
+3. Configure ntfy replies, connect a local agent connector, and confirm it claims, answers, and acks a delivery.
 4. Choose how to keep the connector running long term.
 
 You can return to the website to connect another agent, inspect metadata-only activity and usage stats, configure ntfy replies, or check the data protection and risk notes.
@@ -88,24 +88,46 @@ pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen -
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent openclaw
 ```
 
+Agent output is sent back to the gateway by default. If an ntfy topic is configured, the answer appears there. Use `--no-send-reply` to disable replies or `--reply "fixed text"` to send a fixed reply instead of the local agent output.
+
+Customize the prompt passed to Codex, Claude, or OpenClaw with `-p`:
+
+```bash
+pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude -p 'Handle this voice request carefully:
+
+{{transcript}}
+
+Reply with the outcome and any next step.'
+```
+
+Supported prompt placeholders are `{{transcript}}`, `{{recorded_at}}`, `{{event_id}}`, `{{ring_id}}`, and `{{source_message_id}}`.
+
 Default local commands:
 
 ```text
-codex:    codex exec "{{transcript}}"
-claude:   claude -p "{{transcript}}"
-openclaw: openclaw run "{{transcript}}"
+codex:    codex exec "{{prompt}}"
+claude:   claude -p "{{prompt}}"
+openclaw: openclaw run "{{prompt}}"
 ```
 
 Override command shapes with:
 
 ```bash
 PEBBLE_CODEX_COMMAND=codex
-PEBBLE_CODEX_ARGS_JSON='["exec","{{transcript}}"]'
+PEBBLE_CODEX_ARGS_JSON='["exec","{{prompt}}"]'
 PEBBLE_CLAUDE_COMMAND=claude
-PEBBLE_CLAUDE_ARGS_JSON='["-p","{{transcript}}"]'
+PEBBLE_CLAUDE_ARGS_JSON='["-p","{{prompt}}"]'
 PEBBLE_OPENCLAW_COMMAND=openclaw
-PEBBLE_OPENCLAW_ARGS_JSON='["run","{{transcript}}"]'
+PEBBLE_OPENCLAW_ARGS_JSON='["run","{{prompt}}"]'
 ```
+
+By default each delivery is a one-shot invocation. Claude and OpenClaw also support a local context channel:
+
+```bash
+pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel local-context
+```
+
+This stores recent transcripts and agent replies on the connector machine in `~/.config/pebble-agent-gateway/conversation.json` and includes them in future prompts. Use the default `--channel oneshot` if you do not want local history retained.
 
 For long-term use, run the connector under tmux, screen, launchd, systemd, Docker, or another process supervisor. If the connector keeps an SSE connection open on Fly.io, the Machine remains active.
 
@@ -143,7 +165,7 @@ This MVP is single-node. Do not scale it to multiple Machines with one SQLite da
 
 ## ntfy Replies
 
-Add an ntfy topic URL in Settings. Agent replies are posted to that ntfy endpoint, but reply text is not stored by the gateway by default.
+Add an ntfy topic URL during Setup or in Settings, then use **Send test** to confirm the notification path. Agent replies are posted to that ntfy endpoint, but reply text is not stored by the gateway by default.
 
 Replies sent through ntfy are delivered to your configured ntfy server. Use a self-hosted ntfy server if you do not want reply text sent to ntfy.sh.
 

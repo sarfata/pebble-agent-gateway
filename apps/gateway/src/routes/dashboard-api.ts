@@ -5,7 +5,7 @@ import type { Db } from "../db/migrate.js";
 import type { GatewayConfig } from "../config.js";
 import { authUserMiddleware, type AuthUser } from "../services/auth.js";
 import { generateToken, hashToken } from "../services/crypto/token-hash.js";
-import { encryptAppConfig } from "../services/ntfy.js";
+import { encryptAppConfig, publishNtfyReply } from "../services/ntfy.js";
 
 export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
   const app = new Hono();
@@ -59,6 +59,8 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
       .get(user.id) as { n: number };
     const connectedAgents = db.prepare(`select count(*) as n from agent_connectors where user_id = ? and revoked_at is null and last_seen_at > ?`)
       .get(user.id, connectedSince) as { n: number };
+    const ntfyTargets = db.prepare(`select count(*) as n from notification_targets where user_id = ? and kind = 'ntfy' and enabled = 1`)
+      .get(user.id) as { n: number };
     const latestRing = db.prepare(`
       select event_type, status, error_code, created_at
       from activity_events
@@ -81,6 +83,7 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
       rings: rings.n,
       agents: agents.n,
       connected_agents: connectedAgents.n,
+      ntfy_targets: ntfyTargets.n,
       latest_ring: latestRing,
       latest_delivery: latestDelivery,
       latest_ack: latestAck,
@@ -182,6 +185,15 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
       db.prepare(`insert into notification_targets (id, user_id, kind, label, encrypted_config_json, enabled, created_at, updated_at) values (?, ?, 'ntfy', ?, ?, 1, ?, ?)`)
         .run(`ntfy_${nanoid(21)}`, user.id, body.ntfy_label ?? "ntfy", encryptAppConfig(config, { url: body.ntfy_url }), new Date().toISOString(), new Date().toISOString());
     }
+    return c.json({ ok: true });
+  });
+
+  app.post("/ntfy/test", async (c) => {
+    const user = c.get("user") as AuthUser;
+    const target = db.prepare(`select count(*) as n from notification_targets where user_id = ? and kind = 'ntfy' and enabled = 1`)
+      .get(user.id) as { n: number };
+    if (target.n === 0) return c.json({ ok: false, error: "no_ntfy_target" }, 400);
+    await publishNtfyReply(db, config, user.id, "Pebble Agent Gateway ntfy test: replies from local agents will appear here.");
     return c.json({ ok: true });
   });
 
