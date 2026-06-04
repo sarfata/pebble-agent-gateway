@@ -15,7 +15,7 @@
   "packageManager": "pnpm@10.0.0",
   "scripts": {
     "build": "pnpm -r build",
-    "prepare": "pnpm build",
+    "prepare": "pnpm --filter @pebble/agent-cli build",
     "test": "pnpm -r test",
     "dev:gateway": "pnpm --filter @pebble/gateway dev",
     "dev:cli": "pnpm --filter @pebble/agent-cli dev",
