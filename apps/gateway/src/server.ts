@@ -21,7 +21,7 @@ export function createApp() {
   const webIndex = fileURLToPath(new URL("../dist-web/index.html", import.meta.url));
   const config = loadConfig();
   const db = openDb(config.databaseUrl);
-  expirePendingDeliveries(db);
+  void expirePendingDeliveries(db, config).catch((error) => console.error("expiration cleanup failed", error));
   const hub = new DeliveryStreamHub();
   let draining = false;
   const app = new Hono();
@@ -37,7 +37,9 @@ export function createApp() {
   app.use("/assets/*", serveStatic({ root: webRoot }));
   app.get("*", serveStatic({ path: webIndex }));
 
-  const expirationInterval = setInterval(() => expirePendingDeliveries(db), 60_000);
+  const expirationInterval = setInterval(() => {
+    void expirePendingDeliveries(db, config).catch((error) => console.error("expiration cleanup failed", error));
+  }, 60_000);
   return {
     app,
     config,
@@ -59,6 +61,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const server = serve({ fetch: runtime.app.fetch, port: runtime.config.port }, ({ port }) => {
     console.log(`Pebble Agent Gateway listening on http://localhost:${port}`);
   });
-  const shutdown = new ShutdownManager(server, runtime.db, runtime.hub);
+  const shutdown = new ShutdownManager(server, runtime.db, runtime.config, runtime.hub);
   shutdown.install();
 }

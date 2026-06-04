@@ -18,6 +18,6 @@ primary_region = "iad"
 [env]
   DATABASE_URL = "file:/data/gateway.sqlite"
   MESSAGE_RETENTION_MODE = "encrypted_ephemeral"
-  MESSAGE_TTL_MINUTES = "60"
+  MESSAGE_TTL_MINUTES = "1"
   DELETE_PAYLOAD_ON_CLAIM = "true"
   DEBUG_RETENTION = "false"

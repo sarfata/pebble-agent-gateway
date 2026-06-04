@@ -11,8 +11,9 @@ import type { RingIngestRequest } from "@pebble/protocol";
 import type { DeliveryStreamHub } from "./stream.js";
 import { logInfo, logWarn } from "../logger.js";
 import { encryptAppPayload } from "../crypto/app-payload.js";
+import { publishNtfyReply } from "../ntfy.js";
 
-export function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryStreamHub, ring: AuthRing, input: RingIngestRequest) {
+export async function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryStreamHub, ring: AuthRing, input: RingIngestRequest) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + config.messageTtlMinutes * 60_000).toISOString();
   const eventId = `evt_${nanoid(21)}`;
@@ -133,6 +134,9 @@ export function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryS
   });
 
   const deliveries = tx();
+  if (deliveries.length === 0) {
+    await publishNtfyReply(db, config, ring.user_id, `Pebble agent error: no agent connector is configured for this message${routing.targetHint ? ` (${routing.targetHint})` : ""}. No transcript was stored.`);
+  }
   for (const delivery of deliveries) {
     hub.publish(delivery.agent_id, { delivery_id: delivery.delivery_id, event_id: eventId, expires_at: expiresAt });
   }

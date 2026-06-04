@@ -79,7 +79,7 @@ export function ringIngestRoutes(db: Db, config: GatewayConfig, hub: DeliveryStr
       });
       return c.json({ ok: false, error: "invalid_payload", details: parsed.error.flatten(), request_id: requestId }, 400);
     }
-    const result = enqueueRingMessage(db, config, hub, ring, parsed.data);
+    const result = await enqueueRingMessage(db, config, hub, ring, parsed.data);
     logInfo("ring.ingest.accepted", {
       request_id: requestId,
       ring_id: ring.id,

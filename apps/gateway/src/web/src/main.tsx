@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, AlertTriangle, Bell, Bot, Brain, CheckCircle, Code2, Copy, Gauge, Github, KeyRound, Radio, Settings as SettingsIcon, Shield, Terminal, Wrench } from "lucide-react";
+import { Activity, AlertTriangle, Bell, Bot, Brain, CheckCircle, Code2, Copy, Gauge, Github, KeyRound, LoaderCircle, Radio, Settings as SettingsIcon, Shield, Terminal, Wrench } from "lucide-react";
 import "./styles.css";
 
 type Page = "onboarding" | "dashboard" | "rings" | "agents" | "activity" | "settings" | "data" | "risks";
@@ -308,10 +308,13 @@ function RingsSetup({ showTable = false }: { showTable?: boolean }) {
   const [name, setName] = useState("Pebble Index Ring");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const refresh = () => api<{ rows: any[] }>("/api/dashboard/rings").then((r) => setRows(r.rows));
   useEffect(() => { void refresh(); }, []);
   async function add() {
     setError(null);
+    setMessage(null);
     if (!name.trim()) {
       setError("Enter a ring name.");
       return;
@@ -319,6 +322,7 @@ function RingsSetup({ showTable = false }: { showTable?: boolean }) {
     setBusy(true);
     try {
       setCreated(await api<CreatedRing>("/api/dashboard/rings", { method: "POST", body: JSON.stringify({ name: name.trim() }) }));
+      setMessage("Ring created. Copy the webhook URL and auth token into CoreApp.");
       setName("Pebble Index Ring");
       await refresh();
     } catch (err) {
@@ -330,15 +334,23 @@ function RingsSetup({ showTable = false }: { showTable?: boolean }) {
   async function revoke(row: any) {
     if (row.revoked_at) return;
     if (!confirm(`Revoke ring "${row.name}"? Its current ingest token will stop working immediately.`)) return;
-    await api(`/api/dashboard/rings/${row.id}/revoke`, { method: "POST", body: "{}" });
-    await refresh();
+    setRevokingId(row.id);
+    setMessage(null);
+    try {
+      await api(`/api/dashboard/rings/${row.id}/revoke`, { method: "POST", body: "{}" });
+      setMessage(`Revoked ${row.name}.`);
+      await refresh();
+    } finally {
+      setRevokingId(null);
+    }
   }
   return <>
     <div className="inline-form">
       <label>Ring name<input value={name} onChange={(e) => { setError(null); setName(e.target.value); }} /></label>
-      <button disabled={busy} onClick={add}><KeyRound size={16} /> {busy ? "Adding..." : "Add ring"}</button>
+      <button disabled={busy} onClick={add}>{busy ? <LoaderCircle className="spin" size={16} /> : <KeyRound size={16} />} {busy ? "Adding..." : "Add ring"}</button>
     </div>
     {error && <p className="error" role="alert">{error}</p>}
+    {message && <p className="hint action-message">{message}</p>}
     <CoreAppSettingsGuide created={created} />
     {showTable && <Table
       rows={rows}
@@ -350,8 +362,9 @@ function RingsSetup({ showTable = false }: { showTable?: boolean }) {
         revoked_at: (value) => value ? formatDateTime(String(value)) : ""
       }}
       actions={(row) => (
-      <button className="danger-button" disabled={Boolean(row.revoked_at)} onClick={() => revoke(row)}>
-        {row.revoked_at ? "Revoked" : "Revoke"}
+      <button className="danger-button" disabled={Boolean(row.revoked_at) || revokingId === row.id} onClick={() => revoke(row)}>
+        {revokingId === row.id && <LoaderCircle className="spin" size={14} />}
+        {row.revoked_at ? "Revoked" : revokingId === row.id ? "Revoking..." : "Revoke"}
       </button>
     )} />}
   </>;
@@ -375,31 +388,37 @@ function CoreAppSettingsGuide({ created }: { created: CreatedRing | null }) {
 }
 
 function CopyField({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
+  const [copied, setCopied] = useState(false);
   async function copy() {
     if (muted) return;
     await navigator.clipboard.writeText(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
   }
   return <label className="copy-field">
     <span>{label}</span>
     <div>
       <input readOnly value={value} className={muted ? "muted" : ""} />
-      <button type="button" className="icon-button" disabled={muted} onClick={copy} aria-label={`Copy ${label}`}>
-        <Copy size={16} />
+      <button type="button" className={copied ? "icon-button copied" : "icon-button"} disabled={muted} onClick={copy} aria-label={`Copy ${label}`}>
+        {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
       </button>
     </div>
   </label>;
 }
 
 function CopyTextArea({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
   async function copy() {
     await navigator.clipboard.writeText(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
   }
   return <label className="copy-field">
     <span>{label}</span>
     <div className="copy-textarea-row">
       <textarea readOnly value={value} />
-      <button type="button" className="icon-button" onClick={copy} aria-label={`Copy ${label}`}>
-        <Copy size={16} />
+      <button type="button" className={copied ? "icon-button copied" : "icon-button"} onClick={copy} aria-label={`Copy ${label}`}>
+        {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
       </button>
     </div>
   </label>;
@@ -421,10 +440,13 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
   const [promptTemplate, setPromptTemplate] = useState(defaultAgentPrompt());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const refresh = () => api<{ rows: any[] }>("/api/dashboard/agents").then((r) => setRows(r.rows));
   useEffect(() => { void refresh(); }, []);
   async function add() {
     setError(null);
+    setMessage(null);
     if (!form.name.trim()) {
       setError("Enter a connector name.");
       return;
@@ -440,6 +462,7 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
         })
       }));
       setCreatedKind(form.kind);
+      setMessage("Connector created. Copy the command now; the token will not be shown again.");
       setForm({ ...form, encryption_public_key: "" });
       await refresh();
     } catch (err) {
@@ -451,8 +474,15 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
   async function revoke(row: any) {
     if (row.revoked_at) return;
     if (!confirm(`Revoke connector "${row.name}"? Its current agent token will stop working immediately.`)) return;
-    await api(`/api/dashboard/agents/${row.id}/revoke`, { method: "POST", body: "{}" });
-    await refresh();
+    setRevokingId(row.id);
+    setMessage(null);
+    try {
+      await api(`/api/dashboard/agents/${row.id}/revoke`, { method: "POST", body: "{}" });
+      setMessage(`Revoked ${row.name}.`);
+      await refresh();
+    } finally {
+      setRevokingId(null);
+    }
   }
   const serverUrl = window.location.origin;
   const keygenCommand = "pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli keygen";
@@ -517,14 +547,16 @@ function AgentSetup({ defaultKind, showTable = false }: { defaultKind: string; s
           </label>
           <p className="hint">Leaving this blank is easier to set up. The tradeoff is that the hosted gateway can decrypt pending messages during claim, though it still does not store transcripts in plaintext at rest.</p>
           {error && <p className="error" role="alert">{error}</p>}
-          <button disabled={busy} onClick={add}><Bot size={16} /> {busy ? "Creating..." : "Create connector"}</button>
+          <button disabled={busy} onClick={add}>{busy ? <LoaderCircle className="spin" size={16} /> : <Bot size={16} />} {busy ? "Creating..." : "Create connector"}</button>
+          {message && <p className="hint action-message">{message}</p>}
         </div>
       </div>
     </div>
     {created && <AgentTokenPanel created={created} serverUrl={serverUrl} connector={createdConnector} promptTemplate={promptTemplate} />}
     {showTable && <Table rows={rows} columns={["kind", "name", "encryption", "last_seen_at", "revoked_at"]} actions={(row) => (
-      <button className="danger-button" disabled={Boolean(row.revoked_at)} onClick={() => revoke(row)}>
-        {row.revoked_at ? "Revoked" : "Revoke"}
+      <button className="danger-button" disabled={Boolean(row.revoked_at) || revokingId === row.id} onClick={() => revoke(row)}>
+        {revokingId === row.id && <LoaderCircle className="spin" size={14} />}
+        {row.revoked_at ? "Revoked" : revokingId === row.id ? "Revoking..." : "Revoke"}
       </button>
     )} />}
   </>;
@@ -624,16 +656,27 @@ function ActivityPage() {
 function Settings() {
   const [form, setForm] = useState({ default_agent_kind: "" });
   const [me, setMe] = useState<{ config: { debugRetention: boolean } } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   useEffect(() => { api<{ config: { debugRetention: boolean } }>("/api/dashboard/me").then(setMe).catch(() => undefined); }, []);
   async function save() {
-    await api("/api/dashboard/settings", { method: "POST", body: JSON.stringify(form) });
-    alert("Saved");
+    setBusy(true);
+    setMessage(null);
+    try {
+      await api("/api/dashboard/settings", { method: "POST", body: JSON.stringify(form) });
+      setMessage("Default target saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save settings.");
+    } finally {
+      setBusy(false);
+    }
   }
   return <section>
     <h2>Settings</h2>
     <label>Default target agent kind<input value={form.default_agent_kind} onChange={(e) => setForm({ ...form, default_agent_kind: e.target.value })} placeholder="cli, claude, codex, openclaw" /></label>
     <NtfySetup />
-    <button onClick={save}>Save default target</button>
+    <button disabled={busy} onClick={save}>{busy && <LoaderCircle className="spin" size={16} />}{busy ? "Saving..." : "Save default target"}</button>
+    {message && <p className="hint action-message">{message}</p>}
     <div className={me?.config.debugRetention ? "setup-panel danger-panel" : "setup-panel"}>
       <h3>Debug retention</h3>
       <p>Status: <strong>{me?.config.debugRetention ? "enabled" : "disabled"}</strong></p>
@@ -686,8 +729,8 @@ function NtfySetup({ compact = false }: { compact?: boolean }) {
     <div className="inline-form ntfy-form">
       <label>ntfy topic URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://ntfy.sh/your-topic" /></label>
       <div className="row">
-        <button disabled={busy !== null} onClick={save}>{busy === "save" ? "Saving..." : "Save ntfy"}</button>
-        <button className="secondary" disabled={busy !== null} onClick={test}>{busy === "test" ? "Testing..." : "Send test"}</button>
+        <button disabled={busy !== null} onClick={save}>{busy === "save" && <LoaderCircle className="spin" size={16} />}{busy === "save" ? "Saving..." : "Save ntfy"}</button>
+        <button className="secondary" disabled={busy !== null} onClick={test}>{busy === "test" && <LoaderCircle className="spin" size={16} />}{busy === "test" ? "Testing..." : "Send test"}</button>
       </div>
     </div>
     {message && <p className="hint">{message}</p>}

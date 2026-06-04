@@ -1,22 +1,40 @@
 # Pebble Agent Gateway
 
-Pebble Agent Gateway is an open-source, self-hostable bridge between Pebble Index ring voice webhooks and local AI agent connectors.
+Pebble Agent Gateway lets a Pebble Index ring send voice messages to local AI agents running on your own machine.
 
-The gateway receives Pebble/CoreApp webhook events, authenticates a ring token, stores pending deliveries durably in SQLite, encrypts each pending payload before storage, and lets local connectors claim work over HTTP/SSE.
+You configure the Pebble/CoreApp mobile app with a public webhook URL and token. When you send a voice message from the ring, the gateway receives it, routes it to a local connector, and the connector passes it to Codex, Claude, OpenClaw, or a simple CLI smoke-test runner. Agent answers are sent back through ntfy.
 
 Source: https://github.com/sarfata/pebble-agent-gateway
+
+## Architecture
+
+There are two pieces:
+
+1. A relay gateway with a public HTTPS URL.
+2. An agent connector running on your machine.
+
+The relay can be either:
+
+- self-hosted with Docker plus Tailscale Funnel for public HTTPS
+- hosted on Fly.io as a small relay service
+
+The agent connector runs locally where your agent already has access: inside your code checkout for Codex, on your workstation for Claude, or beside your OpenClaw workflows. It opens an outbound SSE connection to the relay, claims pending deliveries, runs the local agent command, acks the delivery, and sends the answer back to the relay for ntfy notification.
+
+The relay does not need inbound access to your laptop. Your machine connects out to it.
 
 ## Privacy Model
 
 By default, message contents are not stored in plaintext at rest.
 
-Pending messages are encrypted before they are written to SQLite. When a connector public key is configured, each pending delivery is encrypted to that key and decrypted locally by the connector. If no connector key is configured, the gateway encrypts the pending delivery with `APP_ENCRYPTION_KEY` and decrypts it during claim. When a connector claims a delivery, the encrypted payload is deleted from the active queue. If no connector claims it within the configured TTL, the payload is deleted and the message is marked expired.
+Pending messages are encrypted before they are written to SQLite. When a connector public key is configured, each pending delivery is encrypted to that key and decrypted locally by the connector. If no connector key is configured, the gateway encrypts the pending delivery with `APP_ENCRYPTION_KEY` and decrypts it during claim.
+
+When a connector claims a delivery, the encrypted payload is deleted from the active queue. If no connector claims it within the configured TTL, the payload is deleted, the message is marked expired, and the gateway sends an ntfy error saying no one is listening.
 
 The dashboard keeps metadata-only activity logs: timestamps, delivery status, target connector type, payload size, latency, and error codes. Transcripts and audio are not retained unless debug mode is explicitly enabled.
 
 Important limitation: the gateway receives plaintext during webhook processing unless mobile-side end-to-end encryption is enabled. The default guarantee is encrypted short-term storage and metadata-only logs, not full end-to-end encryption.
 
-## Web Onboarding Flow
+## Configure With The Web UI
 
 The web app starts with a guided setup:
 
@@ -26,16 +44,6 @@ The web app starts with a guided setup:
 4. Choose how to keep the connector running long term.
 
 You can return to the website to connect another agent, inspect metadata-only activity and usage stats, configure ntfy replies, or check the data protection and risk notes.
-
-## Quick Start: Local Dev
-
-```bash
-corepack enable
-pnpm install
-pnpm --filter @pebble/gateway dev
-```
-
-Open `http://localhost:3000`, sign up, and follow Setup.
 
 ## Configure CoreApp Manually
 
@@ -167,6 +175,8 @@ This MVP is single-node. Do not scale it to multiple Machines with one SQLite da
 
 Add an ntfy topic URL during Setup or in Settings, then use **Send test** to confirm the notification path. Agent replies are posted to that ntfy endpoint, but reply text is not stored by the gateway by default.
 
+If a routed message is not claimed within one minute by default, the gateway deletes the pending payload and sends an ntfy error saying no one is listening. If the local agent command fails, the connector sends the error back through the same reply path.
+
 Replies sent through ntfy are delivered to your configured ntfy server. Use a self-hosted ntfy server if you do not want reply text sent to ntfy.sh.
 
 ## Security Notes
@@ -186,7 +196,7 @@ SESSION_SECRET=...
 TOKEN_PEPPER=...
 APP_ENCRYPTION_KEY=...
 MESSAGE_RETENTION_MODE=encrypted_ephemeral
-MESSAGE_TTL_MINUTES=60
+MESSAGE_TTL_MINUTES=1
 DELETE_PAYLOAD_ON_CLAIM=true
 DEBUG_RETENTION=false
 SIGNUPS_ENABLED=true
@@ -196,10 +206,14 @@ NTFY_ENABLED=true
 ## Development
 
 ```bash
+corepack enable
 pnpm install
 pnpm test
 pnpm build
+pnpm --filter @pebble/gateway dev
 ```
+
+Open `http://localhost:3000`, sign up, and follow Setup.
 
 ## Roadmap
 

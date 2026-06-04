@@ -35,10 +35,10 @@ function seed() {
 }
 
 describe("gateway integration", () => {
-  it("keeps transcripts out of SQLite, survives queue read, claims, decrypts, deletes, and acks", () => {
+  it("keeps transcripts out of SQLite, survives queue read, claims, decrypts, deletes, and acks", async () => {
     const { db, config, keypair } = seed();
     const hub = new DeliveryStreamHub();
-    const result = enqueueRingMessage(db, config, hub, { id: "ring_test", user_id: "usr_test", name: "Ring" }, {
+    const result = await enqueueRingMessage(db, config, hub, { id: "ring_test", user_id: "usr_test", name: "Ring" }, {
       message_id: "pebble-msg-123",
       recorded_at: "2026-06-02T19:22:00.000Z",
       transcript: "Codex, fix the failing auth test",
@@ -65,11 +65,11 @@ describe("gateway integration", () => {
     expect(ackDelivery(db, { id: "agt_test", user_id: "usr_test", kind: "codex", name: "Codex" }, deliveryId, "processed").status).toBe(200);
   });
 
-  it("supports gateway-managed encryption when an agent has no public key", () => {
+  it("supports gateway-managed encryption when an agent has no public key", async () => {
     const { db, config } = seed();
     db.prepare(`update agent_connectors set encryption_public_key = '' where id = 'agt_test'`).run();
     const hub = new DeliveryStreamHub();
-    const result = enqueueRingMessage(db, config, hub, { id: "ring_test", user_id: "usr_test", name: "Ring" }, {
+    const result = await enqueueRingMessage(db, config, hub, { id: "ring_test", user_id: "usr_test", name: "Ring" }, {
       message_id: "pebble-msg-no-key",
       recorded_at: "2026-06-02T19:30:00.000Z",
       transcript: "Codex, test gateway managed encryption",
@@ -92,14 +92,45 @@ describe("gateway integration", () => {
     expect(afterClaim.encrypted_payload_json).toBeNull();
   });
 
-  it("expires pending encrypted payloads", () => {
-    const { db } = seed();
+  it("sends ntfy error when no connector target exists", async () => {
+    const { db, config } = seed();
+    db.prepare(`delete from agent_connectors`).run();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"));
+    const { encryptAppConfig } = await import("../src/services/ntfy.js");
+    db.prepare(`insert into notification_targets (id, user_id, kind, label, encrypted_config_json, enabled, created_at, updated_at) values ('ntfy_no_target', 'usr_test', 'ntfy', 'Phone', ?, 1, ?, ?)`)
+      .run(encryptAppConfig(config, { url: "https://ntfy.sh/no-target-topic" }), new Date().toISOString(), new Date().toISOString());
+    const hub = new DeliveryStreamHub();
+    const result = await enqueueRingMessage(db, config, hub, { id: "ring_test", user_id: "usr_test", name: "Ring" }, {
+      message_id: "pebble-msg-no-target",
+      recorded_at: "2026-06-02T19:30:00.000Z",
+      transcript: "Codex, no target is configured",
+      audio_url: null,
+      metadata: {}
+    });
+    expect(result.ok).toBe(false);
+    expect(result.deliveries).toHaveLength(0);
+    expect(fetchMock).toHaveBeenCalledWith("https://ntfy.sh/no-target-topic", expect.objectContaining({ body: expect.stringContaining("no agent connector is configured") }));
+    const dump = db.prepare(`select coalesce(group_concat(event_type || status || coalesce(metadata_json,'')), '') as text from activity_events`).get() as { text: string };
+    expect(dump.text).not.toContain("no target is configured");
+    fetchMock.mockRestore();
+  });
+
+  it("expires pending encrypted payloads and sends no-listener ntfy error", async () => {
+    const { db, config } = seed();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"));
+    const { encryptAppConfig } = await import("../src/services/ntfy.js");
+    db.prepare(`insert into notification_targets (id, user_id, kind, label, encrypted_config_json, enabled, created_at, updated_at) values ('ntfy_expire', 'usr_test', 'ntfy', 'Phone', ?, 1, ?, ?)`)
+      .run(encryptAppConfig(config, { url: "https://ntfy.sh/expire-topic" }), new Date().toISOString(), new Date().toISOString());
     db.prepare(`insert into ring_events (id, user_id, ring_id, source_message_id, message_hash, target_hint, payload_bytes, audio_bytes, received_at, expires_at, status, created_at) values ('evt_old', 'usr_test', 'ring_test', 'old', 'hash', 'codex', 10, null, '2026-01-01T00:00:00.000Z', '2026-01-01T01:00:00.000Z', 'queued', '2026-01-01T00:00:00.000Z')`).run();
     db.prepare(`insert into agent_deliveries (event_id, user_id, agent_id, status, encrypted_payload_json, available_at, expires_at, created_at) values ('evt_old', 'usr_test', 'agt_test', 'pending', '{"ciphertext":"x"}', '2026-01-01T00:00:00.000Z', '2026-01-01T01:00:00.000Z', '2026-01-01T00:00:00.000Z')`).run();
-    expect(expirePendingDeliveries(db, "2026-01-01T02:00:00.000Z")).toBe(1);
+    expect(await expirePendingDeliveries(db, config, "2026-01-01T02:00:00.000Z")).toBe(1);
     const row = db.prepare(`select status, encrypted_payload_json from agent_deliveries where event_id = 'evt_old'`).get() as { status: string; encrypted_payload_json: string | null };
     expect(row.status).toBe("expired");
     expect(row.encrypted_payload_json).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith("https://ntfy.sh/expire-topic", expect.objectContaining({ body: expect.stringContaining("no one is listening") }));
+    const notification = db.prepare(`select event_type, status from activity_events where event_id = 'evt_old' and event_type = 'notification.no_listener'`).get() as { event_type: string; status: string };
+    expect(notification.status).toBe("sent");
+    fetchMock.mockRestore();
   });
 
   it("emits SSE availability metadata without payload content", async () => {

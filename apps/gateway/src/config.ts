@@ -28,7 +28,7 @@ export function loadConfig(env = process.env): GatewayConfig {
     tokenPepper: env.TOKEN_PEPPER ?? "dev-token-pepper-change-me",
     appEncryptionKey: env.APP_ENCRYPTION_KEY ?? randomBytes(32).toString("base64url"),
     messageRetentionMode: "encrypted_ephemeral",
-    messageTtlMinutes: Number(env.MESSAGE_TTL_MINUTES ?? "60"),
+    messageTtlMinutes: Number(env.MESSAGE_TTL_MINUTES ?? "1"),
     deletePayloadOnClaim: bool(env.DELETE_PAYLOAD_ON_CLAIM, true),
     debugRetention: bool(env.DEBUG_RETENTION, false),
     signupsEnabled: bool(env.SIGNUPS_ENABLED, true),

@@ -58,9 +58,11 @@ program.command("listen")
     if (options.sendReply) console.log("Replies: agent output is sent back through the gateway");
     console.log("Waiting for messages...");
     const source = connectDeliveryEvents(config.server, config.token, async (event) => {
+      let claimed = false;
       try {
-        const claimed = await client.claim(event.delivery_id);
-        const payload = claimed.payload ?? decryptEnvelope<PlaintextDeliveryPayload>(claimed.encrypted_payload, ensureKeypair().privateKey);
+        const delivery = await client.claim(event.delivery_id);
+        claimed = true;
+        const payload = delivery.payload ?? decryptEnvelope<PlaintextDeliveryPayload>(delivery.encrypted_payload, ensureKeypair().privateKey);
         console.log(`\n[${payload.recorded_at}] ${payload.transcript}`);
         const result = await runAgent(options.agent, payload, { promptTemplate: options.prompt, channel: options.channel });
         if (result) console.log(result);
@@ -73,6 +75,23 @@ program.command("listen")
         }
       } catch (error) {
         console.error(`Failed delivery ${event.delivery_id}:`, error);
+        const message = error instanceof Error ? error.message : String(error);
+        if (options.sendReply) {
+          try {
+            await client.reply(event.event_id, event.delivery_id, `Pebble agent error: ${message}`, "failed");
+            console.log(`Sent error reply for delivery ${event.delivery_id}`);
+          } catch (replyError) {
+            console.error(`Failed to send error reply for delivery ${event.delivery_id}:`, replyError);
+          }
+        }
+        if (claimed) {
+          try {
+            await client.ack(event.delivery_id, "failed");
+            console.log(`Acked failed delivery ${event.delivery_id}`);
+          } catch (ackError) {
+            console.error(`Failed to ack failed delivery ${event.delivery_id}:`, ackError);
+          }
+        }
       }
     });
     await keepListeningUntilShutdown(source);
