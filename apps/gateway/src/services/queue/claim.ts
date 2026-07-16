@@ -50,7 +50,11 @@ export function ackDelivery(db: Db, agent: AuthAgent, deliveryId: number, status
     const row = db.prepare(`select * from agent_deliveries where id = ? and agent_id = ?`)
       .get(deliveryId, agent.id) as { id: number; event_id: string; user_id: string; status: string; claimed_at: string | null; available_at: string } | undefined;
     if (!row) return { status: 404 as const };
-    db.prepare(`update agent_deliveries set status = 'acked', acked_at = ? where id = ?`).run(now, deliveryId);
+    db.prepare(`
+      update agent_deliveries
+      set status = 'acked', acked_at = ?, encrypted_payload_json = null, encrypted_payload_deleted_at = ?
+      where id = ?
+    `).run(now, now, deliveryId);
     logActivity(db, {
       user_id: row.user_id,
       agent_id: agent.id,

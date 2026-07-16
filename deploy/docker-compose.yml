@@ -9,8 +9,8 @@ services:
       PUBLIC_BASE_URL: "https://replace-me.example.com"
       DATABASE_URL: "file:/data/gateway.sqlite"
       MESSAGE_RETENTION_MODE: "encrypted_ephemeral"
-      MESSAGE_TTL_MINUTES: "1"
-      DELETE_PAYLOAD_ON_CLAIM: "true"
+      MESSAGE_TTL_MINUTES: "60"
+      DELETE_PAYLOAD_ON_CLAIM: "false"
       DEBUG_RETENTION: "false"
     env_file:
       - .env

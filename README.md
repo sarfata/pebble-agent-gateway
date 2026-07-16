@@ -1,6 +1,8 @@
 # Pebble Agent Gateway
 
-Pebble Agent Gateway lets a Pebble Index ring send voice messages to local AI agents running on your own machine.
+Talk to your AI agent from a Pebble Index ring.
+
+Pebble Agent Gateway is a small, open-source bridge that sends ring voice messages to local AI agents running on your own machine. Agent answers come back as phone notifications.
 
 You configure the Pebble/CoreApp mobile app with a public webhook URL and token. When you send a voice message from the ring, the gateway receives it, routes it to a local connector, and the connector passes it to Codex, Claude, OpenClaw, or a simple CLI smoke-test runner. Agent answers are sent back through ntfy.
 
@@ -15,8 +17,10 @@ There are two pieces:
 
 The relay can be either:
 
-- self-hosted with Docker plus Tailscale Funnel for public HTTPS
-- hosted on Fly.io as a small relay service
+- **Mac + Tailscale Funnel**, the easiest personal setup. Follow [Run on a Mac with Tailscale](deploy/tailscale-funnel.md).
+- **Fly.io**, which keeps the relay online when your Mac sleeps. Follow [Deploy the gateway to Fly.io](deploy/fly-io.md).
+
+You do not need to understand webhooks, SQLite, or encryption to get started. The dashboard walks you through linking the ring and connecting an agent.
 
 The agent connector runs locally where your agent already has access: inside your code checkout for Codex, on your workstation for Claude, or beside your OpenClaw workflows. It opens an outbound SSE connection to the relay, claims pending deliveries, runs the local agent command, acks the delivery, and sends the answer back to the relay for ntfy notification.
 
@@ -115,7 +119,7 @@ Default local commands:
 ```text
 codex:    codex exec "{{prompt}}"
 claude:   claude -p "{{prompt}}"
-openclaw: openclaw run "{{prompt}}"
+openclaw: openclaw agent --agent main --message "{{prompt}}"
 ```
 
 Override command shapes with:
@@ -126,7 +130,7 @@ PEBBLE_CODEX_ARGS_JSON='["exec","{{prompt}}"]'
 PEBBLE_CLAUDE_COMMAND=claude
 PEBBLE_CLAUDE_ARGS_JSON='["-p","{{prompt}}"]'
 PEBBLE_OPENCLAW_COMMAND=openclaw
-PEBBLE_OPENCLAW_ARGS_JSON='["run","{{prompt}}"]'
+PEBBLE_OPENCLAW_ARGS_JSON='["agent","--agent","main","--message","{{prompt}}"]'
 ```
 
 By default each delivery is a one-shot invocation. Claude and OpenClaw also support a local context channel:
@@ -148,28 +152,7 @@ docker compose -f deploy/docker-compose.yml up --build
 
 SQLite is stored in the mounted `/data` volume at `/data/gateway.sqlite`.
 
-## Public HTTPS With Tailscale Funnel
-
-The Pebble iOS app needs a public HTTPS webhook URL. Use Tailscale Funnel for self-hosted Docker:
-
-```bash
-tailscale funnel 3000
-```
-
-Set `PUBLIC_BASE_URL` to the Funnel HTTPS URL.
-
-## Deploy To Fly.io
-
-```bash
-fly launch --copy-config --config deploy/fly.toml
-fly volumes create gateway_data --size 1
-fly secrets set SESSION_SECRET=... TOKEN_PEPPER=... APP_ENCRYPTION_KEY=... PUBLIC_BASE_URL=https://your-app.fly.dev
-fly deploy --config deploy/fly.toml
-```
-
-This MVP is single-node. Do not scale it to multiple Machines with one SQLite database.
-
-`min_machines_running=0` saves money because pending messages are durable in SQLite. `min_machines_running=1` gives better always-on SSE behavior.
+For a public HTTPS URL, continue with either [Tailscale Funnel](deploy/tailscale-funnel.md) or [Fly.io](deploy/fly-io.md).
 
 ## ntfy Replies
 
@@ -196,8 +179,8 @@ SESSION_SECRET=...
 TOKEN_PEPPER=...
 APP_ENCRYPTION_KEY=...
 MESSAGE_RETENTION_MODE=encrypted_ephemeral
-MESSAGE_TTL_MINUTES=1
-DELETE_PAYLOAD_ON_CLAIM=true
+MESSAGE_TTL_MINUTES=60
+DELETE_PAYLOAD_ON_CLAIM=false
 DEBUG_RETENTION=false
 SIGNUPS_ENABLED=true
 NTFY_ENABLED=true

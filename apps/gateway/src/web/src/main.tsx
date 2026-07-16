@@ -889,7 +889,7 @@ function AgentRunbook() {
     </article>
     <article>
       <span>OpenClaw</span>
-      <p>Install the OpenClaw command line tool locally. The connector uses <code>openclaw run</code> by default.</p>
+      <p>Install the OpenClaw command line tool locally. The connector sends each prompt to the main OpenClaw agent with <code>openclaw agent --agent main --message</code>.</p>
       <CopyField label="Run OpenClaw connector" value="pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent openclaw" />
       <p className="hint">Override with <code>PEBBLE_OPENCLAW_COMMAND</code> and <code>PEBBLE_OPENCLAW_ARGS_JSON</code> for your local OpenClaw setup.</p>
     </article>

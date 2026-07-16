@@ -104,6 +104,15 @@ export const migrations = [
     created_at text not null,
     updated_at text not null
   )`,
+  `create table if not exists pushover_targets (
+    id text primary key,
+    user_id text not null references users(id) on delete cascade,
+    label text not null,
+    encrypted_config_json text not null,
+    enabled integer not null default 1,
+    created_at text not null,
+    updated_at text not null
+  )`,
   `create table if not exists user_settings (
     user_id text primary key references users(id) on delete cascade,
     default_agent_kind text,

@@ -30,8 +30,11 @@ Reply with a concise summary of what you did or what the user should know next.`
 const defaults: Record<Exclude<AgentMode, "print">, AgentCommand> = {
   codex: { command: "codex", args: ["exec", "{{prompt}}"] },
   claude: { command: "claude", args: ["-p", "{{prompt}}"] },
-  openclaw: { command: "openclaw", args: ["run", "{{prompt}}"] }
+  openclaw: { command: "openclaw", args: ["agent", "--agent", "main", "--message", "{{prompt}}"] }
 };
+
+const DEFAULT_TIMEOUT_MS = 10 * 60_000;
+const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 export type RunAgentOptions = {
   promptTemplate: string;
@@ -75,16 +78,44 @@ function runCommand(configured: AgentCommand, payload: PlaintextDeliveryPayload,
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", reject);
+    let outputBytes = 0;
+    let settled = false;
+    const timeoutMs = parsePositiveInteger(process.env.PEBBLE_AGENT_TIMEOUT_MS) ?? DEFAULT_TIMEOUT_MS;
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish(new Error(`${configured.command} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    const capture = (target: Buffer[]) => (chunk: Buffer) => {
+      outputBytes += chunk.byteLength;
+      if (outputBytes > MAX_OUTPUT_BYTES) {
+        child.kill("SIGTERM");
+        finish(new Error(`${configured.command} produced more than ${MAX_OUTPUT_BYTES} bytes of output`));
+        return;
+      }
+      target.push(chunk);
+    };
+    const finish = (error?: Error, output?: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      error ? reject(error) : resolve(output ?? "");
+    };
+    child.stdout.on("data", capture(stdout));
+    child.stderr.on("data", capture(stderr));
+    child.on("error", (error) => finish(error));
     child.on("close", (code) => {
       const output = Buffer.concat(stdout).toString("utf8").trim();
       const error = Buffer.concat(stderr).toString("utf8").trim();
-      if (code === 0) return resolve(output || `${configured.command} completed`);
-      reject(new Error(error || `${configured.command} exited with code ${code ?? "unknown"}`));
+      if (code === 0) return finish(undefined, output || `${configured.command} completed`);
+      finish(new Error(error || `${configured.command} exited with code ${code ?? "unknown"}`));
     });
   });
+}
+
+function parsePositiveInteger(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function buildPrompt(payload: PlaintextDeliveryPayload, options: RunAgentOptions): string {

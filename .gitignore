@@ -1,11 +1,13 @@
 node_modules/
 dist/
 dist-web/
+*.tsbuildinfo
 apps/*/dist/
 apps/*/dist-bundle/
 apps/gateway/dist-web/
 packages/*/dist/
 data/
+deploy/.env
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

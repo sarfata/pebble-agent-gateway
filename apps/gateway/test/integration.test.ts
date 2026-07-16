@@ -164,6 +164,25 @@ describe("gateway integration", () => {
     fetchMock.mockRestore();
   });
 
+  it("publishes Pushover replies with elevated priority for failures", async () => {
+    const { db, config } = seed();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"));
+    const { encryptAppConfig } = await import("../src/services/ntfy.js");
+    const { publishPushoverReply } = await import("../src/services/pushover.js");
+    db.prepare(`insert into pushover_targets (id, user_id, label, encrypted_config_json, enabled, created_at, updated_at) values ('pushover_test', 'usr_test', 'Phone', ?, 1, ?, ?)`)
+      .run(encryptAppConfig(config, { userKey: "user-key", apiToken: "api-token" }), new Date().toISOString(), new Date().toISOString());
+    await publishPushoverReply(db, config, "usr_test", "timed out", "failed");
+    expect(fetchMock).toHaveBeenCalledWith("https://api.pushover.net/1/messages.json", expect.objectContaining({
+      method: "POST",
+      body: expect.any(URLSearchParams)
+    }));
+    const request = fetchMock.mock.calls[0]?.[1];
+    expect((request?.body as URLSearchParams).get("priority")).toBe("2");
+    expect((request?.body as URLSearchParams).get("retry")).toBe("60");
+    expect((request?.body as URLSearchParams).get("message")).toBe("timed out");
+    fetchMock.mockRestore();
+  });
+
   it("accepts current mobile-app direct URL plus token ingest without setup exchange", async () => {
     const { db, config, ringToken } = seed();
     const hub = new DeliveryStreamHub();

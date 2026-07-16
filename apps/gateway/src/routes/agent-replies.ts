@@ -5,6 +5,7 @@ import type { GatewayConfig } from "../config.js";
 import { authenticateAgent } from "../services/auth.js";
 import { logActivity } from "../services/activity-log.js";
 import { publishNtfyReply } from "../services/ntfy.js";
+import { publishPushoverReply } from "../services/pushover.js";
 
 export function agentRepliesRoutes(db: Db, config: GatewayConfig): Hono {
   const app = new Hono();
@@ -22,6 +23,7 @@ export function agentRepliesRoutes(db: Db, config: GatewayConfig): Hono {
       status: parsed.data.status
     });
     await publishNtfyReply(db, config, agent.user_id, parsed.data.text);
+    await publishPushoverReply(db, config, agent.user_id, parsed.data.text, parsed.data.status);
     return c.json({ ok: true });
   });
   return app;
