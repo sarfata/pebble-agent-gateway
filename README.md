@@ -14,7 +14,7 @@ Source: https://github.com/sarfata/pebble-agent-gateway
 
 The shared relay at **https://pebble-agent-gateway.fly.dev** is currently free for personal, reasonable-use setups. Create an account there, follow the five setup steps, and run the connector on your own computer. You do not need a Fly.io account or a public server.
 
-The hosted service is an early community offering, not a paid SLA: availability and limits may change, and abusive or unusually heavy use may be restricted. Your local AI credentials and tools remain on your computer. The relay handles the webhook and encrypted short-lived queue; read [Privacy Model](#privacy-model) before deciding whether the hosted trust model fits you.
+The hosted service is an early community offering, not a paid SLA: availability and limits may change, and abusive or unusually heavy use may be restricted. Each account is currently limited to 5 active rings, 10 active connectors, and 5 active response targets. Your local AI credentials and tools remain on your computer. The relay handles the webhook and encrypted short-lived queue; read [Privacy Model](#privacy-model) before deciding whether the hosted trust model fits you.
 
 Prefer complete control? The project remains fully self-hostable with Tailscale Funnel, Docker, or your own Fly.io app.
 
@@ -213,7 +213,10 @@ DELETE_PAYLOAD_ON_CLAIM=false
 DEBUG_RETENTION=false
 SIGNUPS_ENABLED=true
 NTFY_ENABLED=true
+NTFY_ALLOWED_HOSTS=ntfy.sh
 ```
+
+`NTFY_ALLOWED_HOSTS` is a comma-separated allowlist used when saving ntfy targets. The hosted relay limits ntfy to `ntfy.sh` to prevent accounts from using the gateway to access private network services. Self-hosters can add their own public ntfy hostname.
 
 ## Development
 

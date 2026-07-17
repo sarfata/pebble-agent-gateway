@@ -12,6 +12,7 @@ export type GatewayConfig = {
   debugRetention: boolean;
   signupsEnabled: boolean;
   ntfyEnabled: boolean;
+  ntfyAllowedHosts: string[];
   port: number;
 };
 
@@ -33,6 +34,7 @@ export function loadConfig(env = process.env): GatewayConfig {
     debugRetention: bool(env.DEBUG_RETENTION, false),
     signupsEnabled: bool(env.SIGNUPS_ENABLED, true),
     ntfyEnabled: bool(env.NTFY_ENABLED, true),
+    ntfyAllowedHosts: (env.NTFY_ALLOWED_HOSTS ?? "ntfy.sh").split(",").map((host) => host.trim().toLowerCase()).filter(Boolean),
     port: Number(env.PORT ?? "3000")
   };
 }

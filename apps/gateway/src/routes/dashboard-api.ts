@@ -8,6 +8,12 @@ import { generateToken, hashToken } from "../services/crypto/token-hash.js";
 import { decryptAppConfig, encryptAppConfig, publishNtfyReply } from "../services/ntfy.js";
 import { publishPushoverReply } from "../services/pushover.js";
 
+const ACCOUNT_LIMITS = {
+  rings: 5,
+  agents: 10,
+  responseTargets: 5
+} as const;
+
 export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
   const app = new Hono();
   app.use("*", authUserMiddleware(db, config));
@@ -100,8 +106,8 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
     const rows = db.prepare(`
       select activity_events.*, rings.name as ring_name, agent_connectors.name as agent_name
       from activity_events
-      left join rings on rings.id = activity_events.ring_id
-      left join agent_connectors on agent_connectors.id = activity_events.agent_id
+      left join rings on rings.id = activity_events.ring_id and rings.user_id = activity_events.user_id
+      left join agent_connectors on agent_connectors.id = activity_events.agent_id and agent_connectors.user_id = activity_events.user_id
       where activity_events.user_id = ?
       order by activity_events.created_at desc limit 100
     `).all(user.id);
@@ -166,6 +172,8 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
 
   app.post("/rings", async (c) => {
     const user = c.get("user") as AuthUser;
+    const count = db.prepare(`select count(*) as n from rings where user_id = ? and revoked_at is null`).get(user.id) as { n: number };
+    if (count.n >= ACCOUNT_LIMITS.rings) return c.json({ ok: false, error: "ring_limit_reached" }, 409);
     const parsed = createRingSchema.safeParse(await c.req.json());
     if (!parsed.success) return c.json({ ok: false, error: "invalid_payload" }, 400);
     const token = generateToken("ri_live");
@@ -202,6 +210,8 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
 
   app.post("/agents", async (c) => {
     const user = c.get("user") as AuthUser;
+    const count = db.prepare(`select count(*) as n from agent_connectors where user_id = ? and revoked_at is null`).get(user.id) as { n: number };
+    if (count.n >= ACCOUNT_LIMITS.agents) return c.json({ ok: false, error: "agent_limit_reached" }, 409);
     const parsed = createAgentSchema.safeParse(await c.req.json());
     if (!parsed.success) return c.json({ ok: false, error: "invalid_payload" }, 400);
     const token = generateToken("ag_live");
@@ -220,6 +230,22 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
   app.post("/settings", async (c) => {
     const user = c.get("user") as AuthUser;
     const body = await c.req.json<{ default_agent_kind?: string; ntfy_url?: string; ntfy_label?: string; pushover_user_key?: string; pushover_api_token?: string; pushover_label?: string }>();
+    const hasPushoverUserKey = Boolean(body.pushover_user_key);
+    const hasPushoverApiToken = Boolean(body.pushover_api_token);
+    if (hasPushoverUserKey !== hasPushoverApiToken) {
+      return c.json({ ok: false, error: "pushover_credentials_incomplete" }, 400);
+    }
+    if (body.ntfy_url && !isAllowedNtfyUrl(body.ntfy_url, config.ntfyAllowedHosts)) {
+      return c.json({ ok: false, error: "ntfy_url_not_allowed" }, 400);
+    }
+    const requestedTargets = Number(Boolean(body.ntfy_url)) + Number(hasPushoverUserKey && hasPushoverApiToken);
+    if (requestedTargets > 0) {
+      const ntfyCount = db.prepare(`select count(*) as n from notification_targets where user_id = ? and enabled = 1`).get(user.id) as { n: number };
+      const pushoverCount = db.prepare(`select count(*) as n from pushover_targets where user_id = ? and enabled = 1`).get(user.id) as { n: number };
+      if (ntfyCount.n + pushoverCount.n + requestedTargets > ACCOUNT_LIMITS.responseTargets) {
+        return c.json({ ok: false, error: "response_target_limit_reached" }, 409);
+      }
+    }
     if (body.default_agent_kind !== undefined) {
       db.prepare(`insert into user_settings (user_id, default_agent_kind, updated_at) values (?, ?, ?) on conflict(user_id) do update set default_agent_kind = excluded.default_agent_kind, updated_at = excluded.updated_at`)
         .run(user.id, body.default_agent_kind || null, new Date().toISOString());
@@ -274,4 +300,13 @@ function publicConfig(config: GatewayConfig) {
     signupsEnabled: config.signupsEnabled,
     ntfyEnabled: config.ntfyEnabled
   };
+}
+
+function isAllowedNtfyUrl(value: string, allowedHosts: string[]): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && allowedHosts.includes(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
 }
