@@ -33,7 +33,7 @@ const defaults: Record<Exclude<AgentMode, "print">, AgentCommand> = {
   openclaw: { command: "openclaw", args: ["agent", "--agent", "main", "--message", "{{prompt}}"] }
 };
 
-const DEFAULT_TIMEOUT_MS = 10 * 60_000;
+const DEFAULT_TIMEOUT_MS = 2 * 60_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 export type RunAgentOptions = {
@@ -83,7 +83,7 @@ function runCommand(configured: AgentCommand, payload: PlaintextDeliveryPayload,
     const timeoutMs = parsePositiveInteger(process.env.PEBBLE_AGENT_TIMEOUT_MS) ?? DEFAULT_TIMEOUT_MS;
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
-      finish(new Error(`${configured.command} timed out after ${timeoutMs}ms`));
+      finish(new Error(`Your Ring message was received, but ${displayName(configured.command)} did not finish responding within ${formatDuration(timeoutMs)}.`));
     }, timeoutMs);
     const capture = (target: Buffer[]) => (chunk: Buffer) => {
       outputBytes += chunk.byteLength;
@@ -116,6 +116,23 @@ function parsePositiveInteger(value: string | undefined): number | null {
   if (!value) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function formatDuration(durationMs: number): string {
+  if (durationMs >= 60_000 && durationMs % 60_000 === 0) {
+    const minutes = durationMs / 60_000;
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  if (durationMs >= 1_000 && durationMs % 1_000 === 0) {
+    const seconds = durationMs / 1_000;
+    return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  }
+  return `${durationMs} millisecond${durationMs === 1 ? "" : "s"}`;
+}
+
+function displayName(command: string): string {
+  const executable = command.split("/").at(-1) ?? command;
+  return executable === "openclaw" ? "OpenClaw" : executable;
 }
 
 function buildPrompt(payload: PlaintextDeliveryPayload, options: RunAgentOptions): string {

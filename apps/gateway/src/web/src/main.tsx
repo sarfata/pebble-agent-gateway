@@ -22,6 +22,7 @@ type OnboardingStatus = {
   agents: number;
   connected_agents: number;
   ntfy_targets: number;
+  response_targets: number;
   latest_ring: null | { status: string; error_code: string | null; created_at: string };
   latest_delivery: null | { status: string; target_kind: string | null; created_at: string };
   latest_ack: null | { status: string; delivery_latency_ms: number | null; created_at: string };
@@ -29,7 +30,7 @@ type OnboardingStatus = {
 };
 type ResponseTarget = {
   id: string;
-  kind: "ntfy";
+  kind: "ntfy" | "pushover";
   label: string;
   url: string;
   enabled: boolean;
@@ -224,11 +225,11 @@ function SetupChecklist({ status }: { status: OnboardingStatus | null }) {
     {
       number: "3",
       title: "Configure responses",
-      done: (status?.ntfy_targets ?? 0) > 0,
-      summary: status?.ntfy_targets ? `${status.ntfy_targets} active response target${status.ntfy_targets === 1 ? "" : "s"}` : "No response target",
+      done: (status?.response_targets ?? 0) > 0,
+      summary: status?.response_targets ? `${status.response_targets} active response target${status.response_targets === 1 ? "" : "s"}` : "No response target",
       body: <>
-        <p>Add an ntfy topic so agent answers and errors have somewhere to go.</p>
-        <NtfySetup compact />
+        <p>Add Pushover for reliable phone alerts, including agent failures and timeouts.</p>
+        <PushoverSetup compact />
       </>
     },
     {
@@ -237,7 +238,7 @@ function SetupChecklist({ status }: { status: OnboardingStatus | null }) {
       done: Boolean(status?.latest_ack),
       summary: status?.latest_ack ? `${status.latest_ack.status} at ${formatDateTime(status.latest_ack.created_at)}` : `${status?.connected_agents ?? 0} connected agent${(status?.connected_agents ?? 0) === 1 ? "" : "s"}`,
       body: <>
-        <p>Pick Codex, Claude, or OpenClaw. Agent answers are sent back through ntfy by default.</p>
+        <p>Pick Codex, Claude, or OpenClaw. Agent answers return through your configured notification target.</p>
         <AgentSetup defaultKind="codex" />
         <StatusLine label="Connected agents" value={String(status?.connected_agents ?? 0)} />
         <StatusLine label="Latest ack" value={status?.latest_ack ? `${status.latest_ack.status} at ${formatDateTime(status.latest_ack.created_at)}` : "Waiting for connector ack"} />
@@ -302,7 +303,7 @@ function Dashboard() {
     api<DashboardMetrics>("/api/dashboard/metrics").then(setMetrics);
     api<OnboardingStatus>("/api/dashboard/onboarding/status").then(setStatus).catch(() => undefined);
   }, []);
-  const setupComplete = Boolean((status?.rings ?? 0) > 0 && (status?.ntfy_targets ?? 0) > 0 && status?.latest_ack);
+  const setupComplete = Boolean((status?.rings ?? 0) > 0 && (status?.response_targets ?? 0) > 0 && status?.latest_ack);
   if (!setupComplete) return <DashboardSetup />;
   const cards = metrics ? Object.entries(metrics).filter(([key]) => key !== "message_history") : [];
   return <section>
@@ -800,7 +801,7 @@ function Responses() {
     <header><h2>Responses</h2></header>
     <div className="setup-panel">
       <h3>Reply notification targets</h3>
-      <p>Agent answers, local agent errors, no-target errors, and no-listener timeouts are sent to enabled ntfy targets.</p>
+      <p>Agent answers and operational errors are sent to every enabled notification target. Pushover is recommended for dependable iPhone alerts.</p>
       <Table
         rows={rows}
         columns={["label", "url", "enabled", "updated_at"]}
@@ -816,8 +817,65 @@ function Responses() {
         )}
       />
     </div>
+    <PushoverSetup onSaved={refresh} />
     <NtfySetup onSaved={refresh} />
   </section>;
+}
+
+function PushoverSetup({ compact = false, onSaved }: { compact?: boolean; onSaved?: () => Promise<void> }) {
+  const [userKey, setUserKey] = useState("");
+  const [apiToken, setApiToken] = useState("");
+  const [busy, setBusy] = useState<"save" | "test" | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  async function save() {
+    setMessage(null);
+    if (!userKey.trim() || !apiToken.trim()) {
+      setMessage("Enter both your Pushover user key and application API token.");
+      return;
+    }
+    setBusy("save");
+    try {
+      await api("/api/dashboard/settings", { method: "POST", body: JSON.stringify({ pushover_user_key: userKey.trim(), pushover_api_token: apiToken.trim(), pushover_label: "Phone replies" }) });
+      setMessage("Pushover target saved. Send a test to verify notifications.");
+      setUserKey("");
+      setApiToken("");
+      await onSaved?.();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save Pushover target.");
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function test() {
+    setMessage(null);
+    setBusy("test");
+    try {
+      await api("/api/dashboard/pushover/test", { method: "POST", body: "{}" });
+      setMessage("Test notification sent through Pushover.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not send Pushover test.");
+    } finally {
+      setBusy(null);
+    }
+  }
+  return <div className={compact ? "reply-panel compact" : "reply-panel"}>
+    <div className="reply-heading">
+      <Bell size={18} />
+      <div>
+        <strong>Reliable replies with Pushover</strong>
+        <p>Normal answers arrive once. Failures and timeouts use an attention-grabbing emergency alert so they are hard to miss.</p>
+      </div>
+    </div>
+    <div className="inline-form ntfy-form">
+      <label>User key<input value={userKey} onChange={(e) => setUserKey(e.target.value)} placeholder="Your Pushover user key" /></label>
+      <label>Application API token<input type="password" value={apiToken} onChange={(e) => setApiToken(e.target.value)} placeholder="Create one at pushover.net/apps/build" /></label>
+      <div className="row">
+        <button disabled={busy !== null} onClick={save}>{busy === "save" && <LoaderCircle className="spin" size={16} />}{busy === "save" ? "Saving..." : "Save Pushover"}</button>
+        <button className="secondary" disabled={busy !== null} onClick={test}>{busy === "test" && <LoaderCircle className="spin" size={16} />}{busy === "test" ? "Testing..." : "Send test"}</button>
+      </div>
+    </div>
+    {message && <p className="hint">{message}</p>}
+  </div>;
 }
 
 function NtfySetup({ compact = false, onSaved }: { compact?: boolean; onSaved?: () => Promise<void> }) {

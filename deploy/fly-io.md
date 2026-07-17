@@ -2,6 +2,12 @@
 
 This option keeps the web gateway reachable even when your Mac is asleep. Your AI agent still runs locally through the connector; it is not installed on Fly.io.
 
+## Use the shared relay instead
+
+If you do not need your own deployment, create an account at [pebble-agent-gateway.fly.dev](https://pebble-agent-gateway.fly.dev). The shared community relay is currently free for personal, reasonable use; availability and limits may change and it does not include a paid SLA. Your connector and AI credentials stay on your own computer.
+
+Continue below when you want an isolated instance under your own Fly.io account.
+
 ## Before you start
 
 Install and sign in to the Fly CLI:
@@ -56,6 +62,12 @@ curl --fail https://my-pebble-gateway.fly.dev/healthz
 ```
 
 Open `https://my-pebble-gateway.fly.dev`, create your account, and follow the setup guide. Then connect the local agent using the command shown in the dashboard.
+
+The first account created on a fresh instance is marked `admin`. That currently identifies the instance owner and reserves future instance-wide controls; it does not grant access to other accounts' transcripts or resources. For a private deployment, disable further registration after creating the owner:
+
+```bash
+fly secrets set --app my-pebble-gateway SIGNUPS_ENABLED=false
+```
 
 ## Later deployments
 

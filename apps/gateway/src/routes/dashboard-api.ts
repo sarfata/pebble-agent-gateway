@@ -6,6 +6,7 @@ import type { GatewayConfig } from "../config.js";
 import { authUserMiddleware, type AuthUser } from "../services/auth.js";
 import { generateToken, hashToken } from "../services/crypto/token-hash.js";
 import { decryptAppConfig, encryptAppConfig, publishNtfyReply } from "../services/ntfy.js";
+import { publishPushoverReply } from "../services/pushover.js";
 
 export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
   const app = new Hono();
@@ -61,6 +62,8 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
       .get(user.id, connectedSince) as { n: number };
     const ntfyTargets = db.prepare(`select count(*) as n from notification_targets where user_id = ? and kind = 'ntfy' and enabled = 1`)
       .get(user.id) as { n: number };
+    const pushoverTargets = db.prepare(`select count(*) as n from pushover_targets where user_id = ? and enabled = 1`)
+      .get(user.id) as { n: number };
     const latestRing = db.prepare(`
       select event_type, status, error_code, created_at
       from activity_events
@@ -84,6 +87,7 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
       agents: agents.n,
       connected_agents: connectedAgents.n,
       ntfy_targets: ntfyTargets.n,
+      response_targets: ntfyTargets.n + pushoverTargets.n,
       latest_ring: latestRing,
       latest_delivery: latestDelivery,
       latest_ack: latestAck,
@@ -106,14 +110,21 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
 
   app.get("/responses", (c) => {
     const user = c.get("user") as AuthUser;
-    const rows = db.prepare(`
+    const ntfyRows = db.prepare(`
       select id, label, encrypted_config_json, enabled, created_at, updated_at
       from notification_targets
       where user_id = ? and kind = 'ntfy'
       order by enabled desc, updated_at desc
     `).all(user.id) as Array<{ id: string; label: string; encrypted_config_json: string; enabled: number; created_at: string; updated_at: string }>;
+    const pushoverRows = db.prepare(`
+      select id, label, enabled, created_at, updated_at
+      from pushover_targets
+      where user_id = ?
+      order by enabled desc, updated_at desc
+    `).all(user.id) as Array<{ id: string; label: string; enabled: number; created_at: string; updated_at: string }>;
     return c.json({
-      rows: rows.map((row) => ({
+      rows: [
+        ...ntfyRows.map((row) => ({
         id: row.id,
         kind: "ntfy",
         label: row.label,
@@ -121,7 +132,17 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
         enabled: row.enabled === 1,
         created_at: row.created_at,
         updated_at: row.updated_at
-      }))
+        })),
+        ...pushoverRows.map((row) => ({
+          id: row.id,
+          kind: "pushover",
+          label: row.label,
+          url: "Pushover app",
+          enabled: row.enabled === 1,
+          created_at: row.created_at,
+          updated_at: row.updated_at
+        }))
+      ]
     });
   });
 
@@ -198,7 +219,7 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
 
   app.post("/settings", async (c) => {
     const user = c.get("user") as AuthUser;
-    const body = await c.req.json<{ default_agent_kind?: string; ntfy_url?: string; ntfy_label?: string }>();
+    const body = await c.req.json<{ default_agent_kind?: string; ntfy_url?: string; ntfy_label?: string; pushover_user_key?: string; pushover_api_token?: string; pushover_label?: string }>();
     if (body.default_agent_kind !== undefined) {
       db.prepare(`insert into user_settings (user_id, default_agent_kind, updated_at) values (?, ?, ?) on conflict(user_id) do update set default_agent_kind = excluded.default_agent_kind, updated_at = excluded.updated_at`)
         .run(user.id, body.default_agent_kind || null, new Date().toISOString());
@@ -207,12 +228,18 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
       db.prepare(`insert into notification_targets (id, user_id, kind, label, encrypted_config_json, enabled, created_at, updated_at) values (?, ?, 'ntfy', ?, ?, 1, ?, ?)`)
         .run(`ntfy_${nanoid(21)}`, user.id, body.ntfy_label ?? "ntfy", encryptAppConfig(config, { url: body.ntfy_url }), new Date().toISOString(), new Date().toISOString());
     }
+    if (body.pushover_user_key && body.pushover_api_token) {
+      db.prepare(`insert into pushover_targets (id, user_id, label, encrypted_config_json, enabled, created_at, updated_at) values (?, ?, ?, ?, 1, ?, ?)`)
+        .run(`pushover_${nanoid(21)}`, user.id, body.pushover_label ?? "Pushover", encryptAppConfig(config, { userKey: body.pushover_user_key, apiToken: body.pushover_api_token }), new Date().toISOString(), new Date().toISOString());
+    }
     return c.json({ ok: true });
   });
 
   app.post("/responses/:id/disable", (c) => {
     const user = c.get("user") as AuthUser;
     db.prepare(`update notification_targets set enabled = 0, updated_at = ? where id = ? and user_id = ? and kind = 'ntfy'`)
+      .run(new Date().toISOString(), c.req.param("id"), user.id);
+    db.prepare(`update pushover_targets set enabled = 0, updated_at = ? where id = ? and user_id = ?`)
       .run(new Date().toISOString(), c.req.param("id"), user.id);
     return c.json({ ok: true });
   });
@@ -223,6 +250,15 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
       .get(user.id) as { n: number };
     if (target.n === 0) return c.json({ ok: false, error: "no_ntfy_target" }, 400);
     await publishNtfyReply(db, config, user.id, "Pebble Agent Gateway ntfy test: replies from local agents will appear here.");
+    return c.json({ ok: true });
+  });
+
+  app.post("/pushover/test", async (c) => {
+    const user = c.get("user") as AuthUser;
+    const target = db.prepare(`select count(*) as n from pushover_targets where user_id = ? and enabled = 1`)
+      .get(user.id) as { n: number };
+    if (target.n === 0) return c.json({ ok: false, error: "no_pushover_target" }, 400);
+    await publishPushoverReply(db, config, user.id, "Pebble Agent Gateway is connected. Agent replies will appear here.");
     return c.json({ ok: true });
   });
 
