@@ -80,6 +80,10 @@ fly deploy --app my-pebble-gateway --config deploy/fly.toml
 curl --fail https://my-pebble-gateway.fly.dev/healthz
 ```
 
+The shared relay at `pebble-agent-gateway.fly.dev` is deployed automatically
+after the test suite and production build pass on every push to the repository's
+`main` branch.
+
 ## Important limits
 
 The current release uses SQLite on one persistent Fly volume. Keep it at one Machine; do not scale horizontally. The default configuration suspends the Machine when idle to save money. Set `min_machines_running = 1` in `deploy/fly.toml` if an always-open connector is more important than the extra cost.
