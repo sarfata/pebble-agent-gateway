@@ -20,6 +20,10 @@ export function openDb(databaseUrl: string): Db {
 export function migrate(db: Db): void {
   const tx = db.transaction(() => {
     for (const sql of migrations) db.prepare(sql).run();
+    const settingsColumns = db.prepare(`pragma table_info(user_settings)`).all() as Array<{ name: string }>;
+    if (!settingsColumns.some((column) => column.name === "double_action_agent_kind")) {
+      db.prepare(`alter table user_settings add column double_action_agent_kind text`).run();
+    }
   });
   tx();
 }

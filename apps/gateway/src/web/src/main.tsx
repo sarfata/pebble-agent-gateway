@@ -489,13 +489,15 @@ function CopyTextArea({ label, value }: { label: string; value: string }) {
 function Agents() {
   const [rows, setRows] = useState<any[]>([]);
   const [defaultKind, setDefaultKind] = useState("");
+  const [doubleActionKind, setDoubleActionKind] = useState("");
   const [showSetup, setShowSetup] = useState(false);
   const [busyDefault, setBusyDefault] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const refresh = () => api<{ rows: any[]; default_agent_kind: string }>("/api/dashboard/agents").then((r) => {
+  const refresh = () => api<{ rows: any[]; default_agent_kind: string; double_action_agent_kind: string }>("/api/dashboard/agents").then((r) => {
     setRows(r.rows);
     setDefaultKind(r.default_agent_kind ?? "");
+    setDoubleActionKind(r.double_action_agent_kind ?? "");
   });
   useEffect(() => { void refresh(); }, []);
   const activeRows = rows.filter((row) => !row.revoked_at);
@@ -503,8 +505,11 @@ function Agents() {
     setBusyDefault(true);
     setMessage(null);
     try {
-      await api("/api/dashboard/settings", { method: "POST", body: JSON.stringify({ default_agent_kind: defaultKind }) });
-      setMessage("Default agent saved.");
+      await api("/api/dashboard/settings", { method: "POST", body: JSON.stringify({
+        default_agent_kind: defaultKind,
+        double_action_agent_kind: doubleActionKind
+      }) });
+      setMessage("Ring actions saved.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save default agent.");
     } finally {
@@ -555,7 +560,16 @@ function Agents() {
             <option value="cli">CLI smoke test</option>
           </select>
         </label>
-        <button disabled={busyDefault} onClick={saveDefault}>{busyDefault && <LoaderCircle className="spin" size={16} />}{busyDefault ? "Saving..." : "Save default"}</button>
+        <label>Double-click-and-hold agent
+          <select value={doubleActionKind} onChange={(e) => setDoubleActionKind(e.target.value)}>
+            <option value="">Same as default</option>
+            <option value="codex">Codex</option>
+            <option value="claude">Claude</option>
+            <option value="openclaw">OpenClaw</option>
+            <option value="cli">CLI smoke test</option>
+          </select>
+        </label>
+        <button disabled={busyDefault} onClick={saveDefault}>{busyDefault && <LoaderCircle className="spin" size={16} />}{busyDefault ? "Saving..." : "Save actions"}</button>
       </div>
       {message && <p className="hint action-message">{message}</p>}
       <button className="secondary" onClick={() => setShowSetup(!showSetup)}><Bot size={16} />{showSetup ? "Hide connector setup" : "Connect another agent"}</button>

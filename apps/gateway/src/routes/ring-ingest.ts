@@ -65,6 +65,7 @@ export function ringIngestRoutes(db: Db, config: GatewayConfig, hub: DeliveryStr
       });
       return c.json({ ok: false, error: "invalid_json", request_id: requestId }, 400);
     }
+    body = withIndexTrigger(body, c.req.header("X-Index-Trigger"));
     const parsed = ringIngestSchema.safeParse(body);
     if (!parsed.success) {
       const fields = Object.keys(parsed.error.flatten().fieldErrors).join(",");
@@ -91,6 +92,12 @@ export function ringIngestRoutes(db: Db, config: GatewayConfig, hub: DeliveryStr
     return c.json({ ...result, request_id: requestId }, 202);
   });
   return app;
+}
+
+function withIndexTrigger(body: unknown, header: string | undefined): unknown {
+  if (header !== "single-click-hold" && header !== "double-click-hold") return body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  return { ...body, trigger: header };
 }
 
 function stripBearer(value: string): string {

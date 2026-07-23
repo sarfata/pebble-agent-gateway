@@ -152,6 +152,11 @@ PEBBLE_OPENCLAW_COMMAND=openclaw
 PEBBLE_OPENCLAW_ARGS_JSON='["agent","--agent","main","--message","{{prompt}}"]'
 ```
 
+The mobile app sends `X-Index-Trigger` for Index gestures. Configure a separate
+double-click-and-hold agent on the Agents page; when it is unset, both gestures
+use the normal default. An explicit voice prefix such as `Claude, ...` still
+takes precedence over gesture routing.
+
 By default each delivery is a one-shot invocation. Claude and OpenClaw also support a local context channel:
 
 ```bash

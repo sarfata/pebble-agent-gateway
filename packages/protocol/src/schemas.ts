@@ -4,6 +4,7 @@ export const ringIngestSchema = z.object({
   message_id: z.string().min(1).max(256),
   recorded_at: z.string().datetime(),
   transcript: z.string().min(1).max(8000),
+  trigger: z.enum(["single-click-hold", "double-click-hold"]).optional(),
   audio_url: z.string().url().nullable().optional(),
   metadata: z.record(z.unknown()).default({})
 });

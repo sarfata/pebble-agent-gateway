@@ -15,6 +15,7 @@ export type PlaintextDeliveryPayload = {
   source_message_id: string;
   recorded_at: string;
   transcript: string;
+  trigger?: "single-click-hold" | "double-click-hold";
   audio: null | {
     url?: string;
     bytes?: number;

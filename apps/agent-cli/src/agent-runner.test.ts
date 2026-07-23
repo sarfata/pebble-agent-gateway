@@ -13,6 +13,8 @@ const payload: PlaintextDeliveryPayload = {
 };
 
 afterEach(() => {
+  delete process.env.PEBBLE_CLAUDE_COMMAND;
+  delete process.env.PEBBLE_CLAUDE_ARGS_JSON;
   delete process.env.PEBBLE_OPENCLAW_COMMAND;
   delete process.env.PEBBLE_OPENCLAW_ARGS_JSON;
   delete process.env.PEBBLE_AGENT_TIMEOUT_MS;
@@ -34,5 +36,17 @@ describe("agent timeout", () => {
       promptTemplate: "{{transcript}}",
       channel: "oneshot"
     })).rejects.toThrow("Your Ring message was received, but node did not finish responding within 20 milliseconds.");
+  });
+});
+
+describe("Claude channel", () => {
+  it("invokes the configured Claude command with transcript and trigger placeholders", async () => {
+    process.env.PEBBLE_CLAUDE_COMMAND = process.execPath;
+    process.env.PEBBLE_CLAUDE_ARGS_JSON = JSON.stringify(["-e", "process.stdout.write(process.argv[1])", "{{prompt}}"]);
+    const result = await runAgent("claude", { ...payload, trigger: "double-click-hold" }, {
+      promptTemplate: "heard={{transcript}} trigger={{trigger}}",
+      channel: "oneshot"
+    });
+    expect(result).toBe("heard=test trigger=double-click-hold");
   });
 });

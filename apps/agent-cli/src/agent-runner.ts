@@ -156,6 +156,7 @@ function renderArg(arg: string, payload: PlaintextDeliveryPayload, prompt: strin
     .replaceAll("{{prompt}}", prompt)
     .replaceAll("{{transcript}}", payload.transcript)
     .replaceAll("{{recorded_at}}", payload.recorded_at)
+    .replaceAll("{{trigger}}", payload.trigger ?? "unknown")
     .replaceAll("{{event_id}}", payload.message_id)
     .replaceAll("{{ring_id}}", payload.ring_id)
     .replaceAll("{{source_message_id}}", payload.source_message_id);

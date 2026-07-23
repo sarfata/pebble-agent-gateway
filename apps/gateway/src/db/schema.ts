@@ -116,6 +116,7 @@ export const migrations = [
   `create table if not exists user_settings (
     user_id text primary key references users(id) on delete cascade,
     default_agent_kind text,
+    double_action_agent_kind text,
     updated_at text not null
   )`
 ];

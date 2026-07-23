@@ -16,11 +16,20 @@ export function targetHintFromTranscript(transcript: string): AgentConnectorRow[
   return null;
 }
 
-export function routeConnectors(db: Db, userId: string, transcript: string): { targetHint: string | null; agents: AgentConnectorRow[] } {
+export function routeConnectors(
+  db: Db,
+  userId: string,
+  transcript: string,
+  trigger?: "single-click-hold" | "double-click-hold"
+): { targetHint: string | null; agents: AgentConnectorRow[] } {
   const hinted = targetHintFromTranscript(transcript);
-  const defaultKind = db.prepare(`select default_agent_kind from user_settings where user_id = ?`)
-    .get(userId) as { default_agent_kind: AgentConnectorRow["kind"] | null } | undefined;
-  const kind = hinted ?? defaultKind?.default_agent_kind ?? null;
+  const settings = db.prepare(`select default_agent_kind, double_action_agent_kind from user_settings where user_id = ?`)
+    .get(userId) as {
+      default_agent_kind: AgentConnectorRow["kind"] | null;
+      double_action_agent_kind: AgentConnectorRow["kind"] | null;
+    } | undefined;
+  const gestureKind = trigger === "double-click-hold" ? settings?.double_action_agent_kind : null;
+  const kind = hinted ?? gestureKind ?? settings?.default_agent_kind ?? null;
   const agents = kind
     ? db.prepare(`select id, user_id, kind, name, encryption_public_key from agent_connectors where user_id = ? and kind = ? and revoked_at is null`)
       .all(userId, kind) as AgentConnectorRow[]

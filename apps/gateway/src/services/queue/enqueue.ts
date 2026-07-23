@@ -18,7 +18,7 @@ export async function enqueueRingMessage(db: Db, config: GatewayConfig, hub: Del
   const expiresAt = new Date(now.getTime() + config.messageTtlMinutes * 60_000).toISOString();
   const eventId = `evt_${nanoid(21)}`;
   const payloadBytes = Buffer.byteLength(JSON.stringify(input));
-  const routing = routeConnectors(db, ring.user_id, input.transcript);
+  const routing = routeConnectors(db, ring.user_id, input.transcript, input.trigger);
 
   const existing = db.prepare(`select id, expires_at from ring_events where ring_id = ? and source_message_id = ?`)
     .get(ring.id, input.message_id) as { id: string; expires_at: string } | undefined;
@@ -96,6 +96,7 @@ export async function enqueueRingMessage(db: Db, config: GatewayConfig, hub: Del
         source_message_id: input.message_id,
         recorded_at: input.recorded_at,
         transcript: input.transcript,
+        trigger: input.trigger,
         audio: input.audio_url ? { url: input.audio_url } : null,
         metadata: input.metadata
       };

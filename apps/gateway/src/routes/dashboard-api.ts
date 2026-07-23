@@ -191,8 +191,14 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
 
   app.get("/agents", (c) => {
     const user = c.get("user") as AuthUser;
-    const settings = db.prepare(`select default_agent_kind from user_settings where user_id = ?`).get(user.id) as { default_agent_kind: string | null } | undefined;
-    return c.json({ default_agent_kind: settings?.default_agent_kind ?? "", rows: db.prepare(`
+    const settings = db.prepare(`select default_agent_kind, double_action_agent_kind from user_settings where user_id = ?`).get(user.id) as {
+      default_agent_kind: string | null;
+      double_action_agent_kind: string | null;
+    } | undefined;
+    return c.json({
+      default_agent_kind: settings?.default_agent_kind ?? "",
+      double_action_agent_kind: settings?.double_action_agent_kind ?? "",
+      rows: db.prepare(`
       select
         id,
         kind,
@@ -205,7 +211,8 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
       from agent_connectors
       where user_id = ?
       order by created_at desc
-    `).all(user.id) });
+    `).all(user.id)
+    });
   });
 
   app.post("/agents", async (c) => {
@@ -229,7 +236,10 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
 
   app.post("/settings", async (c) => {
     const user = c.get("user") as AuthUser;
-    const body = await c.req.json<{ default_agent_kind?: string; ntfy_url?: string; ntfy_label?: string; pushover_user_key?: string; pushover_api_token?: string; pushover_label?: string }>();
+    const body = await c.req.json<{ default_agent_kind?: string; double_action_agent_kind?: string; ntfy_url?: string; ntfy_label?: string; pushover_user_key?: string; pushover_api_token?: string; pushover_label?: string }>();
+    if (!isAgentKindOrEmpty(body.default_agent_kind) || !isAgentKindOrEmpty(body.double_action_agent_kind)) {
+      return c.json({ ok: false, error: "invalid_agent_kind" }, 400);
+    }
     const hasPushoverUserKey = Boolean(body.pushover_user_key);
     const hasPushoverApiToken = Boolean(body.pushover_api_token);
     if (hasPushoverUserKey !== hasPushoverApiToken) {
@@ -246,9 +256,13 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
         return c.json({ ok: false, error: "response_target_limit_reached" }, 409);
       }
     }
-    if (body.default_agent_kind !== undefined) {
-      db.prepare(`insert into user_settings (user_id, default_agent_kind, updated_at) values (?, ?, ?) on conflict(user_id) do update set default_agent_kind = excluded.default_agent_kind, updated_at = excluded.updated_at`)
-        .run(user.id, body.default_agent_kind || null, new Date().toISOString());
+    if (body.default_agent_kind !== undefined || body.double_action_agent_kind !== undefined) {
+      const current = db.prepare(`select default_agent_kind, double_action_agent_kind from user_settings where user_id = ?`)
+        .get(user.id) as { default_agent_kind: string | null; double_action_agent_kind: string | null } | undefined;
+      const defaultKind = body.default_agent_kind === undefined ? current?.default_agent_kind ?? null : body.default_agent_kind || null;
+      const doubleKind = body.double_action_agent_kind === undefined ? current?.double_action_agent_kind ?? null : body.double_action_agent_kind || null;
+      db.prepare(`insert into user_settings (user_id, default_agent_kind, double_action_agent_kind, updated_at) values (?, ?, ?, ?) on conflict(user_id) do update set default_agent_kind = excluded.default_agent_kind, double_action_agent_kind = excluded.double_action_agent_kind, updated_at = excluded.updated_at`)
+        .run(user.id, defaultKind, doubleKind, new Date().toISOString());
     }
     if (body.ntfy_url) {
       db.prepare(`insert into notification_targets (id, user_id, kind, label, encrypted_config_json, enabled, created_at, updated_at) values (?, ?, 'ntfy', ?, ?, 1, ?, ?)`)
@@ -309,4 +323,8 @@ function isAllowedNtfyUrl(value: string, allowedHosts: string[]): boolean {
   } catch {
     return false;
   }
+}
+
+function isAgentKindOrEmpty(value: string | undefined): boolean {
+  return value === undefined || value === "" || ["codex", "claude", "openclaw", "cli"].includes(value);
 }

@@ -243,4 +243,55 @@ describe("gateway integration", () => {
     expect(body.ok).toBe(true);
     expect(body.request_id.startsWith("req_")).toBe(true);
   });
+
+  it("routes a CoreApp double action to its configured agent and preserves the trigger", async () => {
+    const { db, config, ringToken } = seed();
+    const now = new Date().toISOString();
+    const claudeKeypair = generateAgentKeypair();
+    db.prepare(`insert into agent_connectors (id, user_id, kind, name, token_hash, encryption_public_key, last_seen_at, created_at, revoked_at) values ('agt_claude', 'usr_test', 'claude', 'Claude', ?, ?, null, ?, null)`)
+      .run(hashToken(generateToken("ag_live"), config.tokenPepper), claudeKeypair.publicKey, now);
+    db.prepare(`insert into user_settings (user_id, default_agent_kind, double_action_agent_kind, updated_at) values ('usr_test', 'codex', 'claude', ?)`)
+      .run(now);
+    const hub = new DeliveryStreamHub();
+    const app = new Hono().route("/api/ring", ringIngestRoutes(db, config, hub, () => false));
+    const form = new FormData();
+    form.set("client", "ring");
+    form.set("recordedAt", "1780428120000");
+    form.set("transcription", "Handle this without a voice prefix");
+    const response = await app.request("/api/ring/ingest", {
+      method: "POST",
+      headers: {
+        "X-Widget-Token": ringToken,
+        "X-Index-Trigger": "double-click-hold"
+      },
+      body: form
+    });
+    const body = await response.json() as { ok: boolean; deliveries: Array<{ delivery_id: number; agent_kind: string }> };
+    expect(response.status).toBe(202);
+    expect(body.deliveries).toHaveLength(1);
+    expect(body.deliveries[0].agent_kind).toBe("claude");
+
+    const claimed = claimDelivery(db, config, { id: "agt_claude", user_id: "usr_test", kind: "claude", name: "Claude" }, body.deliveries[0].delivery_id);
+    expect(claimed.status).toBe(200);
+    if (claimed.status !== 200) throw new Error("claim failed");
+    const payload = decryptEnvelope<any>(claimed.encrypted_payload, claudeKeypair.privateKey);
+    expect(payload.trigger).toBe("double-click-hold");
+  });
+
+  it("lets an explicit voice prefix override double-action routing", async () => {
+    const { db, config } = seed();
+    const now = new Date().toISOString();
+    db.prepare(`insert into user_settings (user_id, default_agent_kind, double_action_agent_kind, updated_at) values ('usr_test', 'codex', 'claude', ?)`)
+      .run(now);
+    const result = await enqueueRingMessage(db, config, new DeliveryStreamHub(), { id: "ring_test", user_id: "usr_test", name: "Ring" }, {
+      message_id: "double-prefixed",
+      recorded_at: now,
+      transcript: "Codex, keep this with Codex",
+      trigger: "double-click-hold",
+      audio_url: null,
+      metadata: {}
+    });
+    expect(result.deliveries).toHaveLength(1);
+    expect(result.deliveries[0].agent_kind).toBe("codex");
+  });
 });
