@@ -115,16 +115,36 @@ Run a real local agent connector:
 
 ```bash
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent codex
-pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude
+pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel local-context
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent openclaw
 ```
 
 Agent output is sent back to the gateway by default. If Pushover or ntfy is configured, the answer appears there. Use `--no-send-reply` to disable replies or `--reply "fixed text"` to send a fixed reply instead of the local agent output.
 
+### Claude: keep the conversation between ring messages
+
+For Claude, the recommended setup is the `local-context` channel shown above.
+It makes the ring behave like an ongoing conversation: each Claude invocation
+receives up to eight recent ring transcripts and Claude replies, so follow-ups
+such as “summarize that,” “do the second option,” or “what did I tell you
+earlier?” have the context they need.
+
+The context stays on the connector machine in
+`~/.config/pebble-agent-gateway/conversation.json`. The gateway still keeps only
+encrypted pending payloads and metadata-only activity logs. The local file is
+limited to the 30 most recent turns.
+
+If you want every message to be completely independent and do not want local
+conversation history, use the stateless channel instead:
+
+```bash
+pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel oneshot
+```
+
 Customize the prompt passed to Codex, Claude, or OpenClaw with `-p`:
 
 ```bash
-pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude -p 'Handle this voice request carefully:
+pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel local-context -p 'Handle this voice request carefully:
 
 {{transcript}}
 
@@ -157,13 +177,8 @@ double-click-and-hold agent on the Agents page; when it is unset, both gestures
 use the normal default. An explicit voice prefix such as `Claude, ...` still
 takes precedence over gesture routing.
 
-By default each delivery is a one-shot invocation. Claude and OpenClaw also support a local context channel:
-
-```bash
-pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel local-context
-```
-
-This stores recent transcripts and agent replies on the connector machine in `~/.config/pebble-agent-gateway/conversation.json` and includes them in future prompts. Use the default `--channel oneshot` if you do not want local history retained.
+OpenClaw also supports `--channel local-context`. Other connectors use the
+stateless `oneshot` channel by default.
 
 For long-term use, run the connector under tmux, screen, launchd, systemd, Docker, or another process supervisor. If the connector keeps an SSE connection open on Fly.io, the Machine remains active.
 

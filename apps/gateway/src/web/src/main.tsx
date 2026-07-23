@@ -738,7 +738,8 @@ function ConnectorChooser({ selected, onSelect }: { selected: ConnectorKind; onS
 function AgentTokenPanel({ created, serverUrl, connector, promptTemplate }: { created: CreatedAgent; serverUrl: string; connector: ConnectorOption; promptTemplate: string }) {
   const listenerCommand = connectorListenCommand(connector, serverUrl, created.agent_token, promptTemplate);
   const contextCommand = `${listenerCommand} --channel local-context`;
-  const agentPrompt = connectorAgentPrompt(connector, listenerCommand);
+  const recommendedCommand = connector.kind === "claude" ? contextCommand : listenerCommand;
+  const agentPrompt = connectorAgentPrompt(connector, recommendedCommand);
   return <div className="setup-panel success-panel">
     <div>
       <h3>Connector created</h3>
@@ -747,9 +748,11 @@ function AgentTokenPanel({ created, serverUrl, connector, promptTemplate }: { cr
     <CopyField label="Agent token" value={created.agent_token} />
     <p className="hint">This command sends the local agent's answer back through the gateway. If you configured ntfy, the answer appears on your phone. Reply text is sent to ntfy but is not stored by the gateway by default.</p>
     {(connector.kind === "codex" || connector.kind === "claude") && <CopyTextArea label={`Copy/paste this prompt into ${connector.title}`} value={agentPrompt} />}
-    <CopyField label={(connector.kind === "codex" || connector.kind === "claude") ? "Or run this one-line command yourself" : "One-line listener command"} value={listenerCommand} />
-    {(connector.kind === "claude" || connector.kind === "openclaw") && <CopyField label="Context-preserving local channel" value={contextCommand} />}
-    {(connector.kind === "claude" || connector.kind === "openclaw") && <p className="hint">The context channel stores recent transcripts and agent replies on this machine in <code>~/.config/pebble-agent-gateway/conversation.json</code> and includes them in future prompts. Use the default one-shot command if you do not want local history retained.</p>}
+    <CopyField label={(connector.kind === "codex" || connector.kind === "claude") ? "Or run this one-line command yourself" : "One-line listener command"} value={recommendedCommand} />
+    {connector.kind === "claude" && <p className="hint">Recommended: this context-preserving channel makes follow-up ring messages part of one Claude conversation. It keeps recent transcripts and replies locally in <code>~/.config/pebble-agent-gateway/conversation.json</code>.</p>}
+    {connector.kind === "claude" && <CopyField label="Stateless alternative (no local conversation history)" value={listenerCommand} />}
+    {connector.kind === "openclaw" && <CopyField label="Context-preserving local channel" value={contextCommand} />}
+    {connector.kind === "openclaw" && <p className="hint">The context channel stores recent transcripts and agent replies on this machine in <code>~/.config/pebble-agent-gateway/conversation.json</code> and includes them in future prompts.</p>}
     <p className="hint">{connector.prerequisite} Say <code>{connector.voicePrefix}</code> to test routing. Treat the command as sensitive because it contains your agent token.</p>
   </div>;
 }
@@ -955,8 +958,9 @@ function AgentRunbook() {
     </article>
     <article>
       <span>Claude</span>
-      <p>Install and authenticate the Claude CLI locally. The connector passes transcripts with <code>claude -p</code> by default.</p>
-      <CopyField label="Run Claude connector" value="pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude" />
+      <p>Install and authenticate the Claude CLI locally. Use the context channel so follow-up ring messages remain part of an ongoing local conversation.</p>
+      <CopyField label="Run recommended Claude connector" value="pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel local-context" />
+      <p className="hint">Recent transcripts and replies stay on this machine. Use <code>--channel oneshot</code> when you want independent messages with no local history.</p>
       <p className="hint">Override the command with <code>PEBBLE_CLAUDE_COMMAND</code> and <code>PEBBLE_CLAUDE_ARGS_JSON</code> if your local CLI uses a different shape.</p>
     </article>
     <article>
