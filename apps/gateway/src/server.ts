@@ -12,7 +12,9 @@ import { agentDeliveryRoutes } from "./routes/agent-claim.js";
 import { agentRepliesRoutes } from "./routes/agent-replies.js";
 import { provisionRoutes } from "./routes/provision.js";
 import { dashboardApiRoutes } from "./routes/dashboard-api.js";
+import { mcpRoutes } from "./routes/mcp.js";
 import { DeliveryStreamHub } from "./services/queue/stream.js";
+import { McpEventsService } from "./services/mcp-events.js";
 import { expirePendingDeliveries } from "./services/queue/expire.js";
 import { ShutdownManager } from "./services/shutdown.js";
 
@@ -23,8 +25,10 @@ export function createApp() {
   const db = openDb(config.databaseUrl);
   void expirePendingDeliveries(db, config).catch((error) => console.error("expiration cleanup failed", error));
   const hub = new DeliveryStreamHub();
+  const mcpEvents = new McpEventsService(db, config, hub);
   let draining = false;
   const app = new Hono();
+  const mcp = mcpRoutes(db, config, mcpEvents, () => draining);
 
   app.route("/", healthRoutes(() => draining));
   app.route("/api/auth", authRoutes(db, config));
@@ -34,6 +38,7 @@ export function createApp() {
   app.route("/api/agent", agentRepliesRoutes(db, config));
   app.route("/api/provision", provisionRoutes(db, config));
   app.route("/api/dashboard", dashboardApiRoutes(db, config));
+  app.route("/mcp", mcp.app);
   app.use("/assets/*", serveStatic({ root: webRoot }));
   app.get("*", serveStatic({ path: webIndex }));
 
@@ -51,6 +56,8 @@ export function createApp() {
     },
     close() {
       clearInterval(expirationInterval);
+      mcpEvents.close();
+      void mcp.close();
       db.close();
     }
   };

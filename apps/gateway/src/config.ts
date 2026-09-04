@@ -13,6 +13,7 @@ export type GatewayConfig = {
   signupsEnabled: boolean;
   ntfyEnabled: boolean;
   ntfyAllowedHosts: string[];
+  mcpWebhookAllowedHosts: string[];
   port: number;
 };
 
@@ -35,6 +36,7 @@ export function loadConfig(env = process.env): GatewayConfig {
     signupsEnabled: bool(env.SIGNUPS_ENABLED, true),
     ntfyEnabled: bool(env.NTFY_ENABLED, true),
     ntfyAllowedHosts: (env.NTFY_ALLOWED_HOSTS ?? "ntfy.sh").split(",").map((host) => host.trim().toLowerCase()).filter(Boolean),
+    mcpWebhookAllowedHosts: (env.MCP_WEBHOOK_ALLOWED_HOSTS ?? "").split(",").map((host) => host.trim().toLowerCase()).filter(Boolean),
     port: Number(env.PORT ?? "3000")
   };
 }

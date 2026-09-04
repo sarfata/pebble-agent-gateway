@@ -182,6 +182,29 @@ stateless `oneshot` channel by default.
 
 For long-term use, run the connector under tmux, screen, launchd, systemd, Docker, or another process supervisor. If the connector keeps an SSE connection open on Fly.io, the Machine remains active.
 
+## Connect Through MCP Events (Experimental)
+
+The gateway also exposes a Streamable HTTP MCP endpoint at:
+
+```text
+https://your-gateway.example.com/mcp
+Authorization: Bearer ag_live_...
+```
+
+It uses the official MCP TypeScript server SDK and implements the current draft [MCP Events design sketch](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/pja/design-sketch/docs/design-sketch-proposal.md). Events are not part of an approved MCP specification yet, so the client must support custom MCP methods from this draft.
+
+`events/list` advertises one event, `pebble.message.received`, with all three proposed delivery modes:
+
+- Poll: call `events/poll` with the event name and the last returned cursor.
+- Push: keep an `events/stream` request open and consume `notifications/events/*` SSE frames.
+- Webhook: call `events/subscribe` with an HTTPS callback and a client-generated Standard Webhooks secret (`whsec_` plus base64 of 24–64 random bytes). Refresh before `refreshBefore`, or call `events/unsubscribe` to stop it.
+
+An absent or `null` cursor starts from now. Persist non-null cursors to resume without replaying already-seen events. Webhook subscriptions are in-memory soft state with a granted lifetime between 5 and 60 minutes, so clients should refresh them; a gateway restart requires resubscription.
+
+Each occurrence contains availability metadata (`deliveryId`, `ringId`, `expiresAt`, and `claimUrl`), not the voice transcript. Claim `claimUrl` promptly with the same agent bearer token to retrieve the encrypted or gateway-decrypted delivery through the existing privacy-preserving queue. JSON test/API ingestion, multipart test webhooks, and live Ring/CoreApp webhooks all pass through the same queue and emit this event.
+
+Webhook callback URLs must use HTTPS. The gateway resolves and checks the destination before every delivery, blocks private/special-purpose addresses, does not follow redirects, verifies callback ownership with a signed challenge, signs deliveries using Standard Webhooks headers, and uses bounded retries. Self-hosters who intentionally need a private callback can explicitly allow its hostname with `MCP_WEBHOOK_ALLOWED_HOSTS`.
+
 ## Self-Host With Docker
 
 ```bash
@@ -234,9 +257,12 @@ DEBUG_RETENTION=false
 SIGNUPS_ENABLED=true
 NTFY_ENABLED=true
 NTFY_ALLOWED_HOSTS=ntfy.sh
+MCP_WEBHOOK_ALLOWED_HOSTS=
 ```
 
 `NTFY_ALLOWED_HOSTS` is a comma-separated allowlist used when saving ntfy targets. The hosted relay limits ntfy to `ntfy.sh` to prevent accounts from using the gateway to access private network services. Self-hosters can add their own public ntfy hostname.
+
+`MCP_WEBHOOK_ALLOWED_HOSTS` is a comma-separated escape hatch for MCP webhook callbacks that intentionally resolve to private or otherwise special-purpose IP addresses. Leave it empty for public callbacks and hosted deployments.
 
 ## Development
 
