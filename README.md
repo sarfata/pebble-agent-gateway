@@ -99,7 +99,7 @@ pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli keygen
 
 You can also leave the public key blank when creating a connector. In that mode the gateway encrypts pending messages at rest with `APP_ENCRYPTION_KEY`, decrypts them during claim, and still deletes the stored ciphertext on claim or expiry. This is easier to set up, but weaker than connector-side encryption because the gateway can decrypt pending messages.
 
-Create a connector in the dashboard with kind `codex`, `claude`, `openclaw`, or `cli`, then copy the one-time `ag_live_...` token. You can run a connector without cloning this repo:
+Create a connector in the dashboard with kind `codex`, `claude`, `openclaw`, `grokbot`, or `cli`, then copy the one-time `ag_live_...` token. You can run a connector without cloning this repo:
 
 ```bash
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent print
@@ -117,6 +117,7 @@ Run a real local agent connector:
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent codex
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel local-context
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent openclaw
+GROKBOT_WEBHOOK_URL=https://your-webhook.example.com/hook pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent grokbot
 ```
 
 Agent output is sent back to the gateway by default. If Pushover or ntfy is configured, the answer appears there. Use `--no-send-reply` to disable replies or `--reply "fixed text"` to send a fixed reply instead of the local agent output.
@@ -141,7 +142,19 @@ conversation history, use the stateless channel instead:
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel oneshot
 ```
 
-Customize the prompt passed to Codex, Claude, or OpenClaw with `-p`:
+### GrokBot: relay to any webhook
+
+GrokBot has no local CLI to install. Instead, the connector POSTs the rendered prompt directly to a webhook you control:
+
+```bash
+GROKBOT_WEBHOOK_URL=https://your-webhook.example.com/hook
+GROKBOT_WEBHOOK_TOKEN=optional-bearer-token
+GROKBOT_PAYLOAD_KEY=text
+```
+
+`GROKBOT_WEBHOOK_URL` is required. `GROKBOT_WEBHOOK_TOKEN`, if set, is sent as `Authorization: Bearer <token>`. `GROKBOT_PAYLOAD_KEY` controls the JSON key used for the prompt text (default `text`), so the connector POSTs a body like `{"text": "..."}`. The webhook's response body becomes the reply; an empty body sends a generic confirmation instead. Like OpenClaw, GrokBot supports `--channel local-context` to keep recent ring turns in the prompt.
+
+Customize the prompt passed to Codex, Claude, OpenClaw, or GrokBot with `-p`:
 
 ```bash
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel local-context -p 'Handle this voice request carefully:
@@ -159,6 +172,7 @@ Default local commands:
 codex:    codex exec "{{prompt}}"
 claude:   claude -p "{{prompt}}"
 openclaw: openclaw agent --agent main --message "{{prompt}}"
+grokbot:  (no local command; POSTs the prompt to GROKBOT_WEBHOOK_URL instead)
 ```
 
 Override command shapes with:
@@ -177,8 +191,8 @@ double-click-and-hold agent on the Agents page; when it is unset, both gestures
 use the normal default. An explicit voice prefix such as `Claude, ...` still
 takes precedence over gesture routing.
 
-OpenClaw also supports `--channel local-context`. Other connectors use the
-stateless `oneshot` channel by default.
+OpenClaw and GrokBot also support `--channel local-context`. Other connectors
+use the stateless `oneshot` channel by default.
 
 For long-term use, run the connector under tmux, screen, launchd, systemd, Docker, or another process supervisor. If the connector keeps an SSE connection open on Fly.io, the Machine remains active.
 

@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { AlertTriangle, Bell, Bot, Brain, CheckCircle, Code2, Copy, Gauge, Github, KeyRound, LoaderCircle, Radio, Shield, Terminal, Wrench } from "lucide-react";
+import { AlertTriangle, Bell, Bot, Brain, CheckCircle, Code2, Copy, Gauge, Github, KeyRound, LoaderCircle, Radio, Shield, Terminal, Webhook, Wrench } from "lucide-react";
 import "./styles.css";
 
 type Page = "dashboard" | "rings" | "agents" | "responses" | "data" | "risks";
-type ConnectorKind = "codex" | "claude" | "openclaw" | "cli";
+type ConnectorKind = "codex" | "claude" | "openclaw" | "cli" | "grokbot";
 type CreatedRing = { ok: boolean; ring_id: string; ingest_token: string; webhook_url: string };
 type CreatedAgent = { ok: boolean; agent_id: string; agent_token: string };
 type MessageHistoryPoint = { day: string; messages: number };
@@ -39,7 +39,7 @@ type ResponseTarget = {
 };
 type ConnectorOption = {
   kind: ConnectorKind;
-  agentMode: "codex" | "claude" | "openclaw" | "print";
+  agentMode: "codex" | "claude" | "openclaw" | "print" | "grokbot";
   title: string;
   subtitle: string;
   description: string;
@@ -103,6 +103,19 @@ const connectorOptions: ConnectorOption[] = [
     command: "pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --agent print",
     voicePrefix: "Test message",
     icon: Terminal
+  },
+  {
+    kind: "grokbot",
+    agentMode: "grokbot",
+    title: "GrokBot",
+    subtitle: "Relay to any webhook",
+    description: "Claims ring messages and POSTs the transcript as JSON to a webhook you control. Use this to route ring messages to Grok, a custom bot, or any service that accepts an incoming webhook, without installing a local CLI.",
+    bestFor: "Custom bots and services that accept an incoming webhook.",
+    setup: "Set GROKBOT_WEBHOOK_URL (and optionally GROKBOT_WEBHOOK_TOKEN and GROKBOT_PAYLOAD_KEY) before starting the listener. It POSTs JSON shaped like { \"text\": prompt } with an optional Bearer token, and uses the webhook's response body as the reply.",
+    prerequisite: "A webhook endpoint that accepts POSTed JSON.",
+    command: "pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --agent grokbot",
+    voicePrefix: "GrokBot, summarize this",
+    icon: Webhook
   }
 ];
 
@@ -557,6 +570,7 @@ function Agents() {
             <option value="codex">Codex</option>
             <option value="claude">Claude</option>
             <option value="openclaw">OpenClaw</option>
+            <option value="grokbot">GrokBot</option>
             <option value="cli">CLI smoke test</option>
           </select>
         </label>
@@ -566,6 +580,7 @@ function Agents() {
             <option value="codex">Codex</option>
             <option value="claude">Claude</option>
             <option value="openclaw">OpenClaw</option>
+            <option value="grokbot">GrokBot</option>
             <option value="cli">CLI smoke test</option>
           </select>
         </label>
@@ -751,8 +766,8 @@ function AgentTokenPanel({ created, serverUrl, connector, promptTemplate }: { cr
     <CopyField label={(connector.kind === "codex" || connector.kind === "claude") ? "Or run this one-line command yourself" : "One-line listener command"} value={recommendedCommand} />
     {connector.kind === "claude" && <p className="hint">Recommended: this context-preserving channel makes follow-up ring messages part of one Claude conversation. It keeps recent transcripts and replies locally in <code>~/.config/pebble-agent-gateway/conversation.json</code>.</p>}
     {connector.kind === "claude" && <CopyField label="Stateless alternative (no local conversation history)" value={listenerCommand} />}
-    {connector.kind === "openclaw" && <CopyField label="Context-preserving local channel" value={contextCommand} />}
-    {connector.kind === "openclaw" && <p className="hint">The context channel stores recent transcripts and agent replies on this machine in <code>~/.config/pebble-agent-gateway/conversation.json</code> and includes them in future prompts.</p>}
+    {(connector.kind === "openclaw" || connector.kind === "grokbot") && <CopyField label="Context-preserving local channel" value={contextCommand} />}
+    {(connector.kind === "openclaw" || connector.kind === "grokbot") && <p className="hint">The context channel stores recent transcripts and agent replies on this machine in <code>~/.config/pebble-agent-gateway/conversation.json</code> and includes them in future prompts.</p>}
     <p className="hint">{connector.prerequisite} Say <code>{connector.voicePrefix}</code> to test routing. Treat the command as sensitive because it contains your agent token.</p>
   </div>;
 }
@@ -789,13 +804,14 @@ function shellQuote(value: string): string {
 }
 
 function isConnectorKind(kind: string): kind is ConnectorKind {
-  return ["codex", "claude", "openclaw", "cli"].includes(kind);
+  return ["codex", "claude", "openclaw", "cli", "grokbot"].includes(kind);
 }
 
 function defaultName(kind: ConnectorKind): string {
   if (kind === "codex") return "Local Codex";
   if (kind === "claude") return "Local Claude";
   if (kind === "openclaw") return "Local OpenClaw";
+  if (kind === "grokbot") return "GrokBot";
   return "Local CLI";
 }
 
@@ -969,6 +985,12 @@ function AgentRunbook() {
       <CopyField label="Run OpenClaw connector" value="pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent openclaw" />
       <p className="hint">Override with <code>PEBBLE_OPENCLAW_COMMAND</code> and <code>PEBBLE_OPENCLAW_ARGS_JSON</code> for your local OpenClaw setup.</p>
     </article>
+    <article>
+      <span>GrokBot</span>
+      <p>No local CLI is required. The connector POSTs each prompt as JSON directly to a webhook you control.</p>
+      <CopyField label="Run GrokBot connector" value="pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent grokbot" />
+      <p className="hint">Set <code>GROKBOT_WEBHOOK_URL</code>, and optionally <code>GROKBOT_WEBHOOK_TOKEN</code> and <code>GROKBOT_PAYLOAD_KEY</code>, before starting the listener. The webhook's response body is used as the reply.</p>
+    </article>
   </div>;
 }
 
@@ -1005,7 +1027,7 @@ function Risks() {
     </div>
     <div className="setup-panel">
       <h3>Local agent actions</h3>
-      <p>Codex, Claude, and OpenClaw run locally under your account. The gateway can deliver a transcript, but the local agent tooling decides what actions require confirmation. Do not configure agents to execute shell commands blindly from voice input.</p>
+      <p>Codex, Claude, and OpenClaw run locally under your account. The gateway can deliver a transcript, but the local agent tooling decides what actions require confirmation. Do not configure agents to execute shell commands blindly from voice input. GrokBot connectors instead relay the transcript to a webhook you configure, so the same caution applies to whatever that webhook does with it.</p>
     </div>
     <div className="setup-panel">
       <h3>Hosted gateway trust</h3>

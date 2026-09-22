@@ -294,4 +294,26 @@ describe("gateway integration", () => {
     expect(result.deliveries).toHaveLength(1);
     expect(result.deliveries[0].agent_kind).toBe("codex");
   });
+
+  it("routes a GrokBot voice prefix to a grokbot connector", async () => {
+    const { db, config } = seed();
+    const now = new Date().toISOString();
+    const grokbotKeypair = generateAgentKeypair();
+    db.prepare(`insert into agent_connectors (id, user_id, kind, name, token_hash, encryption_public_key, last_seen_at, created_at, revoked_at) values ('agt_grokbot', 'usr_test', 'grokbot', 'GrokBot', ?, ?, null, ?, null)`)
+      .run(hashToken(generateToken("ag_live"), config.tokenPepper), grokbotKeypair.publicKey, now);
+    const result = await enqueueRingMessage(db, config, new DeliveryStreamHub(), { id: "ring_test", user_id: "usr_test", name: "Ring" }, {
+      message_id: "grokbot-prefixed",
+      recorded_at: now,
+      transcript: "GrokBot, what's the weather",
+      audio_url: null,
+      metadata: {}
+    });
+    expect(result.deliveries).toHaveLength(1);
+    expect(result.deliveries[0].agent_kind).toBe("grokbot");
+
+    const claimed = claimDelivery(db, config, { id: "agt_grokbot", user_id: "usr_test", kind: "grokbot", name: "GrokBot" }, result.deliveries[0].delivery_id);
+    expect(claimed.status).toBe(200);
+    if (claimed.status !== 200) throw new Error("claim failed");
+    expect(decryptEnvelope<any>(claimed.encrypted_payload, grokbotKeypair.privateKey).transcript).toBe("GrokBot, what's the weather");
+  });
 });

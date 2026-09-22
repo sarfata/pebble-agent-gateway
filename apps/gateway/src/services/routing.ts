@@ -3,7 +3,7 @@ import type { Db } from "../db/migrate.js";
 export type AgentConnectorRow = {
   id: string;
   user_id: string;
-  kind: "openclaw" | "claude" | "codex" | "cli";
+  kind: "openclaw" | "claude" | "codex" | "cli" | "grokbot";
   name: string;
   encryption_public_key: string;
 };
@@ -13,6 +13,7 @@ export function targetHintFromTranscript(transcript: string): AgentConnectorRow[
   if (prefix === "claude") return "claude";
   if (prefix === "codex") return "codex";
   if (prefix === "openclaw") return "openclaw";
+  if (prefix === "grokbot") return "grokbot";
   return null;
 }
 

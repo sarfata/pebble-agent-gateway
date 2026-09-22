@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { PlaintextDeliveryPayload } from "./protocol.js";
 import { conversationPath } from "./keypair.js";
 
-export type AgentMode = "print" | "codex" | "claude" | "openclaw";
+export type AgentMode = "print" | "codex" | "claude" | "openclaw" | "grokbot";
 export type AgentChannel = "oneshot" | "local-context";
 
 type AgentCommand = {
@@ -27,13 +27,14 @@ Transcript:
 
 Reply with a concise summary of what you did or what the user should know next.`;
 
-const defaults: Record<Exclude<AgentMode, "print">, AgentCommand> = {
+const defaults: Record<Exclude<AgentMode, "print" | "grokbot">, AgentCommand> = {
   codex: { command: "codex", args: ["exec", "{{prompt}}"] },
   claude: { command: "claude", args: ["-p", "{{prompt}}"] },
   openclaw: { command: "openclaw", args: ["agent", "--agent", "main", "--message", "{{prompt}}"] }
 };
 
 const DEFAULT_TIMEOUT_MS = 2 * 60_000;
+const DEFAULT_GROKBOT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 export type RunAgentOptions = {
@@ -43,6 +44,7 @@ export type RunAgentOptions = {
 
 export async function runAgent(mode: AgentMode, payload: PlaintextDeliveryPayload, options: RunAgentOptions): Promise<string> {
   if (mode === "print") return payload.transcript;
+  if (mode === "grokbot") return runGrokbotWebhook(payload, options);
   const configured = commandFromEnv(mode) ?? defaults[mode];
   const prompt = buildPrompt(payload, options);
   const result = await runCommand(configured, payload, prompt);
@@ -52,11 +54,55 @@ export async function runAgent(mode: AgentMode, payload: PlaintextDeliveryPayloa
 
 export function commandHelp(mode: AgentMode): string {
   if (mode === "print") return "Prints the transcript, acks it, and sends no local agent command.";
+  if (mode === "grokbot") return "POSTs the prompt as JSON to GROKBOT_WEBHOOK_URL (see README).";
   const command = defaults[mode];
   return `${command.command} ${command.args.join(" ")}`;
 }
 
-function commandFromEnv(mode: Exclude<AgentMode, "print">): AgentCommand | null {
+// GrokBot has no standard local CLI, so this mode relays directly over HTTP
+// instead of spawning a process. Configure it with GROKBOT_WEBHOOK_URL
+// (required), and optionally GROKBOT_WEBHOOK_TOKEN (sent as a Bearer token),
+// GROKBOT_PAYLOAD_KEY (JSON key for the prompt text, default "text"), and
+// GROKBOT_TIMEOUT_MS. The webhook's response body becomes the reply when
+// non-empty; otherwise a generic confirmation is returned.
+async function runGrokbotWebhook(payload: PlaintextDeliveryPayload, options: RunAgentOptions): Promise<string> {
+  const url = process.env.GROKBOT_WEBHOOK_URL;
+  if (!url) throw new Error("GROKBOT_WEBHOOK_URL is not set. Configure it before using --agent grokbot.");
+  const token = process.env.GROKBOT_WEBHOOK_TOKEN;
+  const payloadKey = process.env.GROKBOT_PAYLOAD_KEY || "text";
+  const timeoutMs = parsePositiveInteger(process.env.GROKBOT_TIMEOUT_MS) ?? DEFAULT_GROKBOT_TIMEOUT_MS;
+  const prompt = buildPrompt(payload, options);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ [payloadKey]: prompt }),
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Your Ring message was received, but GrokBot did not finish responding within ${formatDuration(timeoutMs)}.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+  const bodyText = (await response.text()).trim();
+  if (!response.ok) {
+    throw new Error(`GrokBot webhook returned HTTP ${response.status}${bodyText ? `: ${bodyText.slice(0, 500)}` : ""}`);
+  }
+  const result = bodyText || `Sent to GrokBot (HTTP ${response.status}).`;
+  if (options.channel === "local-context") appendTurn(payload, result);
+  return result;
+}
+
+function commandFromEnv(mode: Exclude<AgentMode, "print" | "grokbot">): AgentCommand | null {
   const upper = mode.toUpperCase();
   const command = process.env[`PEBBLE_${upper}_COMMAND`];
   const argsJson = process.env[`PEBBLE_${upper}_ARGS_JSON`];

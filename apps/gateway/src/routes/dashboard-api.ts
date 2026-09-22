@@ -326,5 +326,5 @@ function isAllowedNtfyUrl(value: string, allowedHosts: string[]): boolean {
 }
 
 function isAgentKindOrEmpty(value: string | undefined): boolean {
-  return value === undefined || value === "" || ["codex", "claude", "openclaw", "cli"].includes(value);
+  return value === undefined || value === "" || ["codex", "claude", "openclaw", "cli", "grokbot"].includes(value);
 }

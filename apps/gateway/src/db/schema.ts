@@ -34,7 +34,7 @@ export const migrations = [
   `create table if not exists agent_connectors (
     id text primary key,
     user_id text not null references users(id) on delete cascade,
-    kind text not null check (kind in ('openclaw', 'claude', 'codex', 'cli')),
+    kind text not null check (kind in ('openclaw', 'claude', 'codex', 'cli', 'grokbot')),
     name text not null,
     token_hash text not null unique,
     encryption_public_key text not null,

@@ -21,7 +21,7 @@ export const replySchema = z.object({
 });
 
 export const createAgentSchema = z.object({
-  kind: z.enum(["openclaw", "claude", "codex", "cli"]),
+  kind: z.enum(["openclaw", "claude", "codex", "cli", "grokbot"]),
   name: z.string().min(1).max(128),
   encryption_public_key: z.string().max(4096).optional().default("")
 });

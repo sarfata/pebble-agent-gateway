@@ -32,7 +32,7 @@ program.command("login")
   });
 
 program.command("listen")
-  .option("--agent <mode>", "print, codex, claude, or openclaw", "print")
+  .option("--agent <mode>", "print, codex, claude, openclaw, or grokbot", "print")
   .option("--server <url>", "Gateway base URL. If omitted, the saved config is used.")
   .option("--token <token>", "Agent token. If omitted, the saved config is used.")
   .option("-p, --prompt <template>", "Prompt template passed to the local agent. Supports {{transcript}}, {{trigger}}, {{recorded_at}}, {{event_id}}, {{ring_id}}, and {{source_message_id}}.", defaultPromptTemplate)
@@ -45,8 +45,8 @@ program.command("listen")
       ? { server: options.server.replace(/\/$/, ""), token: options.token }
       : loadConfig();
     const client = new PebbleGatewayClient(config.server, config.token);
-    if (!["print", "codex", "claude", "openclaw"].includes(options.agent)) {
-      throw new Error("--agent must be print, codex, claude, or openclaw");
+    if (!["print", "codex", "claude", "openclaw", "grokbot"].includes(options.agent)) {
+      throw new Error("--agent must be print, codex, claude, openclaw, or grokbot");
     }
     if (!["oneshot", "local-context"].includes(options.channel)) {
       throw new Error("--channel must be oneshot or local-context");
