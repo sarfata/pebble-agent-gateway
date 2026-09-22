@@ -251,7 +251,7 @@ function SetupChecklist({ status }: { status: OnboardingStatus | null }) {
       done: Boolean(status?.latest_ack),
       summary: status?.latest_ack ? `${status.latest_ack.status} at ${formatDateTime(status.latest_ack.created_at)}` : `${status?.connected_agents ?? 0} connected agent${(status?.connected_agents ?? 0) === 1 ? "" : "s"}`,
       body: <>
-        <p>Pick Codex, Claude, or OpenClaw. Agent answers return through your configured notification target.</p>
+        <p>Pick Codex, Claude, OpenClaw, or GrokBot. Agent answers return through your configured notification target.</p>
         <AgentSetup defaultKind="codex" />
         <StatusLine label="Connected agents" value={String(status?.connected_agents ?? 0)} />
         <StatusLine label="Latest ack" value={status?.latest_ack ? `${status.latest_ack.status} at ${formatDateTime(status.latest_ack.created_at)}` : "Waiting for connector ack"} />
@@ -286,7 +286,7 @@ function DashboardSetup() {
     <div className="setup-panel">
       <h3>What this website is for</h3>
       <div className="grid three">
-        <article><span>Connect agents</span><p>Come back here to add or revoke Codex, Claude, OpenClaw, or CLI connectors.</p></article>
+        <article><span>Connect agents</span><p>Come back here to add or revoke Codex, Claude, OpenClaw, GrokBot, or CLI connectors.</p></article>
         <article><span>Debug safely</span><p>Use the dashboard activity feed to inspect metadata. Debug retention should stay off unless you need it.</p></article>
         <article><span>Check usage</span><p>Once setup is complete, this page becomes usage stats and recent activity.</p></article>
       </div>
