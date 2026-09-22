@@ -89,6 +89,8 @@ fields: audio, transcription, recordedAt, client
 
 The gateway also accepts `Authorization: Bearer`, `X-Pebble-Token`, `X-Webhook-Token`, direct form token fields, and `?token=` for compatibility.
 
+If your webhook app only offers a generic Headers list and a "Sign requests" toggle instead of a dedicated Auth Token field, leave signing off and add a header named `Authorization` with value `Bearer <your token>` instead.
+
 ## Connect An Agent
 
 Optionally generate a local connector key. This is recommended: the private key stays on your machine, and the dashboard only receives the public key, so queued payloads are encrypted to your connector.

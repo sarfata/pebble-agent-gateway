@@ -459,6 +459,7 @@ function CoreAppSettingsGuide({ created }: { created: CreatedRing | null }) {
       <CopyField label="Trigger" value="Double click & hold" />
     </div>
     <p className="hint">The current CoreApp sends the auth token as the <code>X-Widget-Token</code> header and posts multipart fields named <code>audio</code>, <code>transcription</code>, <code>recordedAt</code>, and <code>client</code>. This gateway accepts that format directly. Use Transcription only or Recording + Transcription; Recording only has no transcript for agent routing.</p>
+    <p className="hint">If your app only offers a generic Headers list and a "Sign requests" toggle instead of a dedicated Auth Token field, leave signing off and add a header named <code>Authorization</code> with value <code>Bearer &lt;your token&gt;</code> instead. <code>X-Pebble-Token</code> and <code>X-Webhook-Token</code> also work if <code>Authorization</code> isn't available.</p>
   </div>;
 }
 
