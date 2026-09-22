@@ -12,7 +12,7 @@ export type AuthRing = {
 export type AuthAgent = {
   id: string;
   user_id: string;
-  kind: "openclaw" | "claude" | "codex" | "cli";
+  kind: "openclaw" | "claude" | "codex" | "cli" | "grokbot";
   name: string;
 };
 

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { AlertTriangle, Bell, Bot, Brain, CheckCircle, Code2, Copy, Gauge, Github, KeyRound, LoaderCircle, Radio, Shield, Terminal, Wrench } from "lucide-react";
+import { AlertTriangle, Bell, Bot, Brain, CheckCircle, Code2, Copy, Gauge, Github, KeyRound, LoaderCircle, Radio, Shield, Terminal, Webhook, Wrench } from "lucide-react";
 import "./styles.css";
 
 type Page = "dashboard" | "rings" | "agents" | "responses" | "data" | "risks";
-type ConnectorKind = "codex" | "claude" | "openclaw" | "cli";
+type ConnectorKind = "codex" | "claude" | "openclaw" | "cli" | "grokbot";
 type CreatedRing = { ok: boolean; ring_id: string; ingest_token: string; webhook_url: string };
-type CreatedAgent = { ok: boolean; agent_id: string; agent_token: string };
+type CreatedAgent = { ok: boolean; agent_id: string; agent_token?: string };
 type MessageHistoryPoint = { day: string; messages: number };
 type DashboardMetrics = {
   message_history: MessageHistoryPoint[];
@@ -39,7 +39,7 @@ type ResponseTarget = {
 };
 type ConnectorOption = {
   kind: ConnectorKind;
-  agentMode: "codex" | "claude" | "openclaw" | "print";
+  agentMode: "codex" | "claude" | "openclaw" | "print" | "grokbot";
   title: string;
   subtitle: string;
   description: string;
@@ -103,6 +103,19 @@ const connectorOptions: ConnectorOption[] = [
     command: "pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --agent print",
     voicePrefix: "Test message",
     icon: Terminal
+  },
+  {
+    kind: "grokbot",
+    agentMode: "grokbot",
+    title: "GrokBot",
+    subtitle: "Relay to any webhook",
+    description: "Forwards ring messages to a webhook you control. The gateway does this automatically, so nothing runs on your machine.",
+    bestFor: "Custom bots and services that accept an incoming webhook.",
+    setup: "Enter GrokBot's webhook URL below. The gateway POSTs { \"<key>\": \"<transcript>\" } as JSON directly to it, with an optional Bearer token, and uses the response body as the reply.",
+    prerequisite: "A webhook endpoint that accepts POSTed JSON.",
+    command: "",
+    voicePrefix: "GrokBot, summarize this",
+    icon: Webhook
   }
 ];
 
@@ -238,7 +251,7 @@ function SetupChecklist({ status }: { status: OnboardingStatus | null }) {
       done: Boolean(status?.latest_ack),
       summary: status?.latest_ack ? `${status.latest_ack.status} at ${formatDateTime(status.latest_ack.created_at)}` : `${status?.connected_agents ?? 0} connected agent${(status?.connected_agents ?? 0) === 1 ? "" : "s"}`,
       body: <>
-        <p>Pick Codex, Claude, or OpenClaw. Agent answers return through your configured notification target.</p>
+        <p>Pick Codex, Claude, OpenClaw, or GrokBot. GrokBot needs no local setup; the others need a listener running somewhere. Agent answers return through your configured notification target.</p>
         <AgentSetup defaultKind="codex" />
         <StatusLine label="Connected agents" value={String(status?.connected_agents ?? 0)} />
         <StatusLine label="Latest ack" value={status?.latest_ack ? `${status.latest_ack.status} at ${formatDateTime(status.latest_ack.created_at)}` : "Waiting for connector ack"} />
@@ -273,7 +286,7 @@ function DashboardSetup() {
     <div className="setup-panel">
       <h3>What this website is for</h3>
       <div className="grid three">
-        <article><span>Connect agents</span><p>Come back here to add or revoke Codex, Claude, OpenClaw, or CLI connectors.</p></article>
+        <article><span>Connect agents</span><p>Come back here to add or revoke Codex, Claude, OpenClaw, GrokBot, or CLI connectors.</p></article>
         <article><span>Debug safely</span><p>Use the dashboard activity feed to inspect metadata. Debug retention should stay off unless you need it.</p></article>
         <article><span>Check usage</span><p>Once setup is complete, this page becomes usage stats and recent activity.</p></article>
       </div>
@@ -446,6 +459,7 @@ function CoreAppSettingsGuide({ created }: { created: CreatedRing | null }) {
       <CopyField label="Trigger" value="Double click & hold" />
     </div>
     <p className="hint">The current CoreApp sends the auth token as the <code>X-Widget-Token</code> header and posts multipart fields named <code>audio</code>, <code>transcription</code>, <code>recordedAt</code>, and <code>client</code>. This gateway accepts that format directly. Use Transcription only or Recording + Transcription; Recording only has no transcript for agent routing.</p>
+    <p className="hint">If your app only offers a generic Headers list and a "Sign requests" toggle instead of a dedicated Auth Token field, leave signing off and add a header named <code>Authorization</code> with value <code>Bearer &lt;your token&gt;</code> instead. <code>X-Pebble-Token</code> and <code>X-Webhook-Token</code> also work if <code>Authorization</code> isn't available.</p>
   </div>;
 }
 
@@ -557,6 +571,7 @@ function Agents() {
             <option value="codex">Codex</option>
             <option value="claude">Claude</option>
             <option value="openclaw">OpenClaw</option>
+            <option value="grokbot">GrokBot</option>
             <option value="cli">CLI smoke test</option>
           </select>
         </label>
@@ -566,6 +581,7 @@ function Agents() {
             <option value="codex">Codex</option>
             <option value="claude">Claude</option>
             <option value="openclaw">OpenClaw</option>
+            <option value="grokbot">GrokBot</option>
             <option value="cli">CLI smoke test</option>
           </select>
         </label>
@@ -583,12 +599,15 @@ function AgentSetup({ defaultKind, showTable = false, onChanged }: { defaultKind
   const [created, setCreated] = useState<CreatedAgent | null>(null);
   const [createdKind, setCreatedKind] = useState<ConnectorKind | null>(null);
   const initialKind = isConnectorKind(defaultKind) ? defaultKind : "cli";
-  const [form, setForm] = useState<{ kind: ConnectorKind; name: string; encryption_public_key: string }>({ kind: initialKind, name: defaultName(initialKind), encryption_public_key: "" });
+  const [form, setForm] = useState<{ kind: ConnectorKind; name: string; encryption_public_key: string; webhookUrl: string; webhookToken: string; payloadKey: string }>({
+    kind: initialKind, name: defaultName(initialKind), encryption_public_key: "", webhookUrl: "", webhookToken: "", payloadKey: ""
+  });
   const [promptTemplate, setPromptTemplate] = useState(defaultAgentPrompt());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const isGrokbot = form.kind === "grokbot";
   const refresh = () => api<{ rows: any[] }>("/api/dashboard/agents").then((r) => setRows(r.rows));
   useEffect(() => { void refresh(); }, []);
   async function add() {
@@ -598,6 +617,10 @@ function AgentSetup({ defaultKind, showTable = false, onChanged }: { defaultKind
       setError("Enter a connector name.");
       return;
     }
+    if (isGrokbot && !form.webhookUrl.trim()) {
+      setError("Enter GrokBot's webhook URL.");
+      return;
+    }
     setBusy(true);
     try {
       setCreated(await api<CreatedAgent>("/api/dashboard/agents", {
@@ -605,12 +628,17 @@ function AgentSetup({ defaultKind, showTable = false, onChanged }: { defaultKind
         body: JSON.stringify({
           kind: form.kind,
           name: form.name.trim(),
-          encryption_public_key: form.encryption_public_key.trim()
+          encryption_public_key: form.encryption_public_key.trim(),
+          ...(isGrokbot ? {
+            webhook_url: form.webhookUrl.trim(),
+            webhook_token: form.webhookToken.trim() || undefined,
+            payload_key: form.payloadKey.trim() || undefined
+          } : {})
         })
       }));
       setCreatedKind(form.kind);
-      setMessage("Connector created. Copy the command now; the token will not be shown again.");
-      setForm({ ...form, encryption_public_key: "" });
+      setMessage(isGrokbot ? "GrokBot connector configured. Ring messages routed to GrokBot are forwarded automatically." : "Connector created. Copy the command now; the token will not be shown again.");
+      setForm({ ...form, encryption_public_key: "", webhookToken: "" });
       await refresh();
       await onChanged?.();
     } catch (err) {
@@ -642,11 +670,11 @@ function AgentSetup({ defaultKind, showTable = false, onChanged }: { defaultKind
     <div className="setup-panel">
       <div>
         <h3>Add a local connector</h3>
-        <p>A local encryption key is recommended but optional. With a key, pending messages are encrypted to your connector and decrypted locally. Without one, the gateway still encrypts pending messages at rest with its app key, then decrypts them during claim.</p>
+        <p>{isGrokbot ? "GrokBot forwards ring messages to a webhook you control. The gateway does this automatically, so nothing needs to run on your machine." : "A local encryption key is recommended but optional. With a key, pending messages are encrypted to your connector and decrypted locally. Without one, the gateway still encrypts pending messages at rest with its app key, then decrypts them during claim."}</p>
       </div>
       {activeRows.length > 0 && <div className="routing-note">
         <strong>Before adding another connector</strong>
-        <p>You can have more than one. Voice prefixes route by kind: <code>Codex, ...</code> goes to Codex, <code>Claude, ...</code> goes to Claude, and <code>OpenClaw, ...</code> goes to OpenClaw. If you add multiple connectors of the same kind, a prefixed message is delivered to all active connectors of that kind. Messages without a prefix use your default target in Settings, or the first active connector if no default is set.</p>
+        <p>You can have more than one. Voice prefixes route by kind: <code>Codex, ...</code> goes to Codex, <code>Claude, ...</code> goes to Claude, <code>OpenClaw, ...</code> goes to OpenClaw, and <code>GrokBot, ...</code> goes to GrokBot. If you add multiple connectors of the same kind, a prefixed message is delivered to all active connectors of that kind. Messages without a prefix use your default target in Settings, or the first active connector if no default is set.</p>
       </div>}
       <div className="step-list">
         <div>
@@ -662,12 +690,21 @@ function AgentSetup({ defaultKind, showTable = false, onChanged }: { defaultKind
             <p className="hint">{selected.prerequisite}</p>
           </div>
         </div>
-        <div>
+        {isGrokbot && <div>
+          <strong>2. Configure GrokBot's webhook</strong>
+          <div className="settings-grid">
+            <label>Webhook URL<input value={form.webhookUrl} onChange={(e) => setForm({ ...form, webhookUrl: e.target.value })} placeholder="https://your-grokbot-webhook.example.com/hook" /></label>
+            <label>Webhook token <span className="optional-label">optional</span><input value={form.webhookToken} onChange={(e) => setForm({ ...form, webhookToken: e.target.value })} placeholder="Sent as Authorization: Bearer <token>" /></label>
+            <label>Payload key <span className="optional-label">optional, default "text"</span><input value={form.payloadKey} onChange={(e) => setForm({ ...form, payloadKey: e.target.value })} placeholder="text" /></label>
+          </div>
+          <p className="hint">The gateway POSTs a JSON body like {"{ \"text\": \"<transcript>\" }"} to this URL when a message routes to GrokBot, and uses the response body as the reply.</p>
+        </div>}
+        {!isGrokbot && <div>
           <strong>2. Optional: generate a local encryption key</strong>
           <CopyField label="Optional privacy command" value={keygenCommand} />
           <p className="hint">This improves privacy because the gateway cannot decrypt queued connector payloads after ingest. Skip this if the command does not work on your machine yet.</p>
-        </div>
-        <div>
+        </div>}
+        {!isGrokbot && <div>
           <strong>3. Preview the listener step</strong>
           <div className="connector-preview">
             <div>
@@ -678,23 +715,23 @@ function AgentSetup({ defaultKind, showTable = false, onChanged }: { defaultKind
             <div className="preview-command">{selected.command} --server {serverUrl} --token [created agent token]</div>
             <p className="hint">Try saying: <code>{selected.voicePrefix}</code></p>
           </div>
-        </div>
-        <div>
+        </div>}
+        {!isGrokbot && <div>
           <strong>4. Customize the prompt sent to the agent</strong>
           <label className="wide-field">Prompt template
             <textarea value={promptTemplate} onChange={(e) => setPromptTemplate(e.target.value)} />
           </label>
           <p className="hint">The listener passes this with <code>-p</code>. Supported placeholders: <code>{"{{transcript}}"}</code>, <code>{"{{recorded_at}}"}</code>, <code>{"{{event_id}}"}</code>, <code>{"{{ring_id}}"}</code>, and <code>{"{{source_message_id}}"}</code>.</p>
-        </div>
+        </div>}
         <div>
-          <strong>5. Create the connector</strong>
+          <strong>{isGrokbot ? "3" : "5"}. Create the connector</strong>
           <div className="settings-grid">
             <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
           </div>
-          <label className="wide-field">Public encryption key <span className="optional-label">optional, recommended</span>
+          {!isGrokbot && <label className="wide-field">Public encryption key <span className="optional-label">optional, recommended</span>
             <textarea value={form.encryption_public_key} onChange={(e) => setForm({ ...form, encryption_public_key: e.target.value })} placeholder="Paste the key printed by keygen, or leave blank to use gateway-managed encryption" />
-          </label>
-          <p className="hint">Leaving this blank is easier to set up. The tradeoff is that the hosted gateway can decrypt pending messages during claim, though it still does not store transcripts in plaintext at rest.</p>
+          </label>}
+          {!isGrokbot && <p className="hint">Leaving this blank is easier to set up. The tradeoff is that the hosted gateway can decrypt pending messages during claim, though it still does not store transcripts in plaintext at rest.</p>}
           {error && <p className="error" role="alert">{error}</p>}
           <button disabled={busy} onClick={add}>{busy ? <LoaderCircle className="spin" size={16} /> : <Bot size={16} />} {busy ? "Creating..." : "Create connector"}</button>
           {message && <p className="hint action-message">{message}</p>}
@@ -736,7 +773,8 @@ function ConnectorChooser({ selected, onSelect }: { selected: ConnectorKind; onS
 }
 
 function AgentTokenPanel({ created, serverUrl, connector, promptTemplate }: { created: CreatedAgent; serverUrl: string; connector: ConnectorOption; promptTemplate: string }) {
-  const listenerCommand = connectorListenCommand(connector, serverUrl, created.agent_token, promptTemplate);
+  if (connector.kind === "grokbot") return <GrokbotConfiguredPanel agentId={created.agent_id} voicePrefix={connector.voicePrefix} />;
+  const listenerCommand = connectorListenCommand(connector, serverUrl, created.agent_token ?? "", promptTemplate);
   const contextCommand = `${listenerCommand} --channel local-context`;
   const recommendedCommand = connector.kind === "claude" ? contextCommand : listenerCommand;
   const agentPrompt = connectorAgentPrompt(connector, recommendedCommand);
@@ -745,7 +783,7 @@ function AgentTokenPanel({ created, serverUrl, connector, promptTemplate }: { cr
       <h3>Connector created</h3>
       <p>Copy one of these now. The gateway stores only a token hash, so it cannot show this token again later.</p>
     </div>
-    <CopyField label="Agent token" value={created.agent_token} />
+    <CopyField label="Agent token" value={created.agent_token ?? ""} />
     <p className="hint">This command sends the local agent's answer back through the gateway. If you configured ntfy, the answer appears on your phone. Reply text is sent to ntfy but is not stored by the gateway by default.</p>
     {(connector.kind === "codex" || connector.kind === "claude") && <CopyTextArea label={`Copy/paste this prompt into ${connector.title}`} value={agentPrompt} />}
     <CopyField label={(connector.kind === "codex" || connector.kind === "claude") ? "Or run this one-line command yourself" : "One-line listener command"} value={recommendedCommand} />
@@ -754,6 +792,35 @@ function AgentTokenPanel({ created, serverUrl, connector, promptTemplate }: { cr
     {connector.kind === "openclaw" && <CopyField label="Context-preserving local channel" value={contextCommand} />}
     {connector.kind === "openclaw" && <p className="hint">The context channel stores recent transcripts and agent replies on this machine in <code>~/.config/pebble-agent-gateway/conversation.json</code> and includes them in future prompts.</p>}
     <p className="hint">{connector.prerequisite} Say <code>{connector.voicePrefix}</code> to test routing. Treat the command as sensitive because it contains your agent token.</p>
+  </div>;
+}
+
+function GrokbotConfiguredPanel({ agentId, voicePrefix }: { agentId: string; voicePrefix: string }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function sendTest() {
+    setBusy(true);
+    setResult(null);
+    setError(null);
+    try {
+      const response = await api<{ ok: boolean; reply?: string }>(`/api/dashboard/agents/${agentId}/test`, { method: "POST", body: "{}" });
+      setResult(response.reply ?? "Test message sent.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reach the GrokBot webhook.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <div className="setup-panel success-panel">
+    <div>
+      <h3>GrokBot configured</h3>
+      <p>Ring messages routed to GrokBot are forwarded automatically by the gateway. Nothing needs to run on your machine.</p>
+    </div>
+    <button disabled={busy} onClick={sendTest}>{busy ? <LoaderCircle className="spin" size={16} /> : <Webhook size={16} />} {busy ? "Sending..." : "Send test"}</button>
+    {result && <p className="hint action-message">{result}</p>}
+    {error && <p className="error" role="alert">{error}</p>}
+    <p className="hint">Say <code>{voicePrefix}</code> to test routing from the ring itself.</p>
   </div>;
 }
 
@@ -789,13 +856,14 @@ function shellQuote(value: string): string {
 }
 
 function isConnectorKind(kind: string): kind is ConnectorKind {
-  return ["codex", "claude", "openclaw", "cli"].includes(kind);
+  return ["codex", "claude", "openclaw", "cli", "grokbot"].includes(kind);
 }
 
 function defaultName(kind: ConnectorKind): string {
   if (kind === "codex") return "Local Codex";
   if (kind === "claude") return "Local Claude";
   if (kind === "openclaw") return "Local OpenClaw";
+  if (kind === "grokbot") return "GrokBot";
   return "Local CLI";
 }
 
@@ -969,6 +1037,11 @@ function AgentRunbook() {
       <CopyField label="Run OpenClaw connector" value="pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent openclaw" />
       <p className="hint">Override with <code>PEBBLE_OPENCLAW_COMMAND</code> and <code>PEBBLE_OPENCLAW_ARGS_JSON</code> for your local OpenClaw setup.</p>
     </article>
+    <article>
+      <span>GrokBot</span>
+      <p>Nothing to run here. GrokBot connectors are configured entirely on the Agents page with a webhook URL and optional token — the gateway forwards ring messages to it directly and uses the response as the reply.</p>
+      <p className="hint">Prefer to keep the webhook secret off the gateway? Run <code>pebble-agent-cli listen --agent grokbot</code> locally instead; see the README for the <code>GROKBOT_WEBHOOK_URL</code> environment variables it uses.</p>
+    </article>
   </div>;
 }
 
@@ -1005,7 +1078,7 @@ function Risks() {
     </div>
     <div className="setup-panel">
       <h3>Local agent actions</h3>
-      <p>Codex, Claude, and OpenClaw run locally under your account. The gateway can deliver a transcript, but the local agent tooling decides what actions require confirmation. Do not configure agents to execute shell commands blindly from voice input.</p>
+      <p>Codex, Claude, and OpenClaw run locally under your account. The gateway can deliver a transcript, but the local agent tooling decides what actions require confirmation. Do not configure agents to execute shell commands blindly from voice input. GrokBot is different: by default the gateway itself forwards the transcript directly to the webhook you configure, holding that webhook's URL and token encrypted at rest the same way it holds Pushover/ntfy credentials. The same caution applies to whatever that webhook does with the transcript.</p>
     </div>
     <div className="setup-panel">
       <h3>Hosted gateway trust</h3>

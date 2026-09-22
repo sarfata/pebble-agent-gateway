@@ -12,8 +12,10 @@ import type { DeliveryStreamHub } from "./stream.js";
 import { logInfo, logWarn } from "../logger.js";
 import { encryptAppPayload } from "../crypto/app-payload.js";
 import { publishNtfyReply } from "../ntfy.js";
+import { processGrokbotDelivery } from "../grokbot.js";
+import type { WebhookHttpClient } from "../mcp-events.js";
 
-export async function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryStreamHub, ring: AuthRing, input: RingIngestRequest) {
+export async function enqueueRingMessage(db: Db, config: GatewayConfig, hub: DeliveryStreamHub, ring: AuthRing, input: RingIngestRequest, grokbotWebhookClient?: WebhookHttpClient) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + config.messageTtlMinutes * 60_000).toISOString();
   const eventId = `evt_${nanoid(21)}`;
@@ -69,7 +71,7 @@ export async function enqueueRingMessage(db: Db, config: GatewayConfig, hub: Del
         target_hint: routing.targetHint,
         payload_bytes: payloadBytes
       });
-      return [];
+      return { created: [], grokbotDeliveries: [] };
     }
 
     db.prepare(`insert into ring_events values (@id, @user_id, @ring_id, @source_message_id, @message_hash, @target_hint, @payload_bytes, @audio_bytes, @received_at, @expires_at, @status, @created_at)`)
@@ -89,6 +91,7 @@ export async function enqueueRingMessage(db: Db, config: GatewayConfig, hub: Del
       });
 
     const created: Array<{ delivery_id: number; agent_id: string; agent_kind: string }> = [];
+    const grokbotDeliveries: Array<{ delivery_id: number; agent: { id: string; user_id: string; encrypted_config_json: string | null } }> = [];
     for (const agent of routing.agents) {
       const plaintext: PlaintextDeliveryPayload = {
         message_id: eventId,
@@ -100,7 +103,10 @@ export async function enqueueRingMessage(db: Db, config: GatewayConfig, hub: Del
         audio: input.audio_url ? { url: input.audio_url } : null,
         metadata: input.metadata
       };
-      const encrypted = agent.encryption_public_key.trim()
+      // GrokBot has no local connector to hold a private key, so its
+      // deliveries always use the app-managed encryption path regardless of
+      // whether a connector key happens to be set on the row.
+      const encrypted = agent.kind !== "grokbot" && agent.encryption_public_key.trim()
         ? encryptEnvelope(plaintext, agent.encryption_public_key)
         : encryptAppPayload(config, plaintext);
       const result = db.prepare(`
@@ -111,6 +117,9 @@ export async function enqueueRingMessage(db: Db, config: GatewayConfig, hub: Del
       `).run(eventId, ring.user_id, agent.id, JSON.stringify(encrypted), now.toISOString(), expiresAt, now.toISOString());
       const deliveryId = Number(result.lastInsertRowid);
       created.push({ delivery_id: deliveryId, agent_id: agent.id, agent_kind: agent.kind });
+      if (agent.kind === "grokbot") {
+        grokbotDeliveries.push({ delivery_id: deliveryId, agent: { id: agent.id, user_id: ring.user_id, encrypted_config_json: agent.encrypted_config_json } });
+      }
       logActivity(db, {
         user_id: ring.user_id,
         ring_id: ring.id,
@@ -131,15 +140,22 @@ export async function enqueueRingMessage(db: Db, config: GatewayConfig, hub: Del
         expires_at: expiresAt
       });
     }
-    return created;
+    return { created, grokbotDeliveries };
   });
 
-  const deliveries = tx();
+  const { created: deliveries, grokbotDeliveries } = tx();
   if (deliveries.length === 0) {
     await publishNtfyReply(db, config, ring.user_id, `Pebble agent error: no agent connector is configured for this message${routing.targetHint ? ` (${routing.targetHint})` : ""}. No transcript was stored.`);
   }
   for (const delivery of deliveries) {
+    if (delivery.agent_kind === "grokbot") continue;
     hub.publish(delivery.agent_id, { delivery_id: delivery.delivery_id, event_id: eventId, expires_at: expiresAt });
+  }
+  // GrokBot has no local connector to claim over SSE, so the gateway forwards
+  // it directly here instead. This intentionally runs after the transaction
+  // commits since it makes an outbound HTTP call.
+  for (const grokbotDelivery of grokbotDeliveries) {
+    await processGrokbotDelivery(db, config, grokbotDelivery.agent, { delivery_id: grokbotDelivery.delivery_id, event_id: eventId }, grokbotWebhookClient);
   }
   return { ok: deliveries.length > 0, event_id: eventId, deliveries: deliveries.map(({ agent_id, ...rest }) => rest), expires_at: expiresAt };
 }

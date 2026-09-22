@@ -108,8 +108,19 @@ export class SafeWebhookHttpClient implements WebhookHttpClient {
       : addresses.find((candidate) => isGloballyRoutableIp(candidate.address));
     if (!address) throw new InvalidWebhookUrlError("Webhook hostname does not resolve to a globally routable address");
 
-    const pinnedLookup: LookupFunction = (_hostname, _options, callback) => {
-      callback(null, address.address, address.family);
+    // Node's `net.connect`/`https.request` default to Happy Eyeballs
+    // (RFC 8305) since Node 18.13/20, which invokes a custom `lookup`
+    // function expecting the "all addresses" array-style callback
+    // (`callback(err, addresses[])`) rather than the single-address form
+    // (`callback(err, address, family)`), signaled by `options.all`. Pass
+    // the pinned address back in whichever shape was actually requested.
+    const pinnedLookup: LookupFunction = (_hostname, options, callback) => {
+      const wantsAll = typeof options === "object" && options !== null && (options as { all?: boolean }).all === true;
+      if (wantsAll) {
+        callback(null, [{ address: address.address, family: address.family }]);
+      } else {
+        callback(null, address.address, address.family);
+      }
     };
 
     return await new Promise<WebhookPostResult>((resolve, reject) => {

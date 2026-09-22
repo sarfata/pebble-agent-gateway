@@ -7,6 +7,7 @@ import { authUserMiddleware, type AuthUser } from "../services/auth.js";
 import { generateToken, hashToken } from "../services/crypto/token-hash.js";
 import { decryptAppConfig, encryptAppConfig, publishNtfyReply } from "../services/ntfy.js";
 import { publishPushoverReply } from "../services/pushover.js";
+import { encryptGrokbotConfig, forwardTranscriptToGrokbot, isHttpsUrl } from "../services/grokbot.js";
 
 const ACCOUNT_LIMITS = {
   rings: 5,
@@ -221,10 +222,27 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
     if (count.n >= ACCOUNT_LIMITS.agents) return c.json({ ok: false, error: "agent_limit_reached" }, 409);
     const parsed = createAgentSchema.safeParse(await c.req.json());
     if (!parsed.success) return c.json({ ok: false, error: "invalid_payload" }, 400);
+    let encryptedConfigJson: string | null = null;
+    if (parsed.data.kind === "grokbot") {
+      if (!parsed.data.webhook_url) return c.json({ ok: false, error: "webhook_url_required" }, 400);
+      if (!isHttpsUrl(parsed.data.webhook_url)) return c.json({ ok: false, error: "webhook_url_must_be_https" }, 400);
+      encryptedConfigJson = encryptGrokbotConfig(config, {
+        url: parsed.data.webhook_url,
+        token: parsed.data.webhook_token || undefined,
+        payloadKey: parsed.data.payload_key || undefined
+      });
+    }
     const token = generateToken("ag_live");
     const id = `agt_${nanoid(21)}`;
-    db.prepare(`insert into agent_connectors (id, user_id, kind, name, token_hash, encryption_public_key, last_seen_at, created_at, revoked_at) values (?, ?, ?, ?, ?, ?, null, ?, null)`)
-      .run(id, user.id, parsed.data.kind, parsed.data.name, hashToken(token, config.tokenPepper), parsed.data.encryption_public_key, new Date().toISOString());
+    // GrokBot has no local connector to hold a private key, so a connector
+    // public key would be pointless (and unclaimable) for it — always store
+    // it with the app-managed encryption path instead.
+    const encryptionPublicKey = parsed.data.kind === "grokbot" ? "" : parsed.data.encryption_public_key;
+    db.prepare(`insert into agent_connectors (id, user_id, kind, name, token_hash, encryption_public_key, encrypted_config_json, last_seen_at, created_at, revoked_at) values (?, ?, ?, ?, ?, ?, ?, null, ?, null)`)
+      .run(id, user.id, parsed.data.kind, parsed.data.name, hashToken(token, config.tokenPepper), encryptionPublicKey, encryptedConfigJson, new Date().toISOString());
+    // GrokBot has nothing to authenticate locally with, so there is no token
+    // to hand back or copy — the gateway forwards for it automatically.
+    if (parsed.data.kind === "grokbot") return c.json({ ok: true, agent_id: id });
     return c.json({ ok: true, agent_id: id, agent_token: token });
   });
 
@@ -232,6 +250,26 @@ export function dashboardApiRoutes(db: Db, config: GatewayConfig): Hono {
     const user = c.get("user") as AuthUser;
     db.prepare(`update agent_connectors set revoked_at = ? where id = ? and user_id = ?`).run(new Date().toISOString(), c.req.param("id"), user.id);
     return c.json({ ok: true });
+  });
+
+  app.post("/agents/:id/test", async (c) => {
+    const user = c.get("user") as AuthUser;
+    const agent = db.prepare(`select id, kind, encrypted_config_json from agent_connectors where id = ? and user_id = ? and revoked_at is null`)
+      .get(c.req.param("id"), user.id) as { id: string; kind: string; encrypted_config_json: string | null } | undefined;
+    if (!agent) return c.json({ ok: false, error: "not_found" }, 404);
+    if (agent.kind !== "grokbot") return c.json({ ok: false, error: "test_not_supported_for_kind" }, 400);
+    if (!agent.encrypted_config_json) return c.json({ ok: false, error: "webhook_not_configured" }, 400);
+    try {
+      const webhook = decryptAppConfig<{ url: string; token?: string; payloadKey?: string }>(config, agent.encrypted_config_json);
+      const reply = await forwardTranscriptToGrokbot(webhook, "This is a test message from Pebble Agent Gateway.");
+      return c.json({ ok: true, reply });
+    } catch (error) {
+      // Use a 4xx status rather than a 5xx: some reverse proxies (including
+      // Cloudflare's edge in front of self-hosted tunnels) replace 5xx
+      // response bodies with their own generic error page, which would hide
+      // this diagnostic message from the dashboard.
+      return c.json({ ok: false, error: error instanceof Error ? error.message : "GrokBot webhook request failed." }, 400);
+    }
   });
 
   app.post("/settings", async (c) => {
@@ -326,5 +364,5 @@ function isAllowedNtfyUrl(value: string, allowedHosts: string[]): boolean {
 }
 
 function isAgentKindOrEmpty(value: string | undefined): boolean {
-  return value === undefined || value === "" || ["codex", "claude", "openclaw", "cli"].includes(value);
+  return value === undefined || value === "" || ["codex", "claude", "openclaw", "cli", "grokbot"].includes(value);
 }
