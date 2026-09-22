@@ -295,25 +295,63 @@ describe("gateway integration", () => {
     expect(result.deliveries[0].agent_kind).toBe("codex");
   });
 
-  it("routes a GrokBot voice prefix to a grokbot connector", async () => {
+  it("routes a GrokBot voice prefix and forwards it directly server-side", async () => {
     const { db, config } = seed();
     const now = new Date().toISOString();
-    const grokbotKeypair = generateAgentKeypair();
-    db.prepare(`insert into agent_connectors (id, user_id, kind, name, token_hash, encryption_public_key, last_seen_at, created_at, revoked_at) values ('agt_grokbot', 'usr_test', 'grokbot', 'GrokBot', ?, ?, null, ?, null)`)
-      .run(hashToken(generateToken("ag_live"), config.tokenPepper), grokbotKeypair.publicKey, now);
+    const { encryptGrokbotConfig } = await import("../src/services/grokbot.js");
+    const { encryptAppConfig } = await import("../src/services/ntfy.js");
+    db.prepare(`insert into agent_connectors (id, user_id, kind, name, token_hash, encryption_public_key, encrypted_config_json, last_seen_at, created_at, revoked_at) values ('agt_grokbot', 'usr_test', 'grokbot', 'GrokBot', ?, '', ?, null, ?, null)`)
+      .run(hashToken(generateToken("ag_live"), config.tokenPepper), encryptGrokbotConfig(config, { url: "https://grokbot.example.com/hook" }), now);
+    db.prepare(`insert into notification_targets (id, user_id, kind, label, encrypted_config_json, enabled, created_at, updated_at) values ('ntfy_grokbot', 'usr_test', 'ntfy', 'Phone', ?, 1, ?, ?)`)
+      .run(encryptAppConfig(config, { url: "https://ntfy.sh/grokbot-topic" }), now, now);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"));
+    const webhookClient = { post: vi.fn().mockResolvedValue({ status: 200, body: "Grok says it's sunny" }) };
+
     const result = await enqueueRingMessage(db, config, new DeliveryStreamHub(), { id: "ring_test", user_id: "usr_test", name: "Ring" }, {
       message_id: "grokbot-prefixed",
       recorded_at: now,
       transcript: "GrokBot, what's the weather",
       audio_url: null,
       metadata: {}
-    });
+    }, webhookClient);
+
     expect(result.deliveries).toHaveLength(1);
     expect(result.deliveries[0].agent_kind).toBe("grokbot");
+    expect(webhookClient.post).toHaveBeenCalledWith(
+      "https://grokbot.example.com/hook",
+      JSON.stringify({ text: "GrokBot, what's the weather" }),
+      expect.objectContaining({ "Content-Type": "application/json" })
+    );
+    const row = db.prepare(`select status from agent_deliveries where id = ?`).get(result.deliveries[0].delivery_id) as { status: string };
+    expect(row.status).toBe("acked");
+    expect(fetchMock).toHaveBeenCalledWith("https://ntfy.sh/grokbot-topic", expect.objectContaining({ body: "Grok says it's sunny" }));
+    fetchMock.mockRestore();
+  });
 
-    const claimed = claimDelivery(db, config, { id: "agt_grokbot", user_id: "usr_test", kind: "grokbot", name: "GrokBot" }, result.deliveries[0].delivery_id);
-    expect(claimed.status).toBe(200);
-    if (claimed.status !== 200) throw new Error("claim failed");
-    expect(decryptEnvelope<any>(claimed.encrypted_payload, grokbotKeypair.privateKey).transcript).toBe("GrokBot, what's the weather");
+  it("fails a GrokBot delivery and sends an error reply when the webhook rejects the request", async () => {
+    const { db, config } = seed();
+    const now = new Date().toISOString();
+    const { encryptGrokbotConfig } = await import("../src/services/grokbot.js");
+    const { encryptAppConfig } = await import("../src/services/ntfy.js");
+    db.prepare(`insert into agent_connectors (id, user_id, kind, name, token_hash, encryption_public_key, encrypted_config_json, last_seen_at, created_at, revoked_at) values ('agt_grokbot', 'usr_test', 'grokbot', 'GrokBot', ?, '', ?, null, ?, null)`)
+      .run(hashToken(generateToken("ag_live"), config.tokenPepper), encryptGrokbotConfig(config, { url: "https://grokbot.example.com/hook" }), now);
+    db.prepare(`insert into notification_targets (id, user_id, kind, label, encrypted_config_json, enabled, created_at, updated_at) values ('ntfy_grokbot_fail', 'usr_test', 'ntfy', 'Phone', ?, 1, ?, ?)`)
+      .run(encryptAppConfig(config, { url: "https://ntfy.sh/grokbot-fail-topic" }), now, now);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"));
+    const webhookClient = { post: vi.fn().mockResolvedValue({ status: 500, body: "boom" }) };
+
+    const result = await enqueueRingMessage(db, config, new DeliveryStreamHub(), { id: "ring_test", user_id: "usr_test", name: "Ring" }, {
+      message_id: "grokbot-failure",
+      recorded_at: now,
+      transcript: "GrokBot, this will fail",
+      audio_url: null,
+      metadata: {}
+    }, webhookClient);
+
+    const row = db.prepare(`select status, failure_reason from agent_deliveries where id = ?`).get(result.deliveries[0].delivery_id) as { status: string; failure_reason: string | null };
+    expect(row.status).toBe("failed");
+    expect(row.failure_reason).toContain("HTTP 500");
+    expect(fetchMock).toHaveBeenCalledWith("https://ntfy.sh/grokbot-fail-topic", expect.objectContaining({ body: expect.stringContaining("Pebble agent error") }));
+    fetchMock.mockRestore();
   });
 });

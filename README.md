@@ -4,7 +4,7 @@ Talk to your AI agent from a Pebble Index ring.
 
 Pebble Agent Gateway is a small, open-source bridge that sends ring voice messages to AI agents running on your own machine. Agent answers come back as reliable phone notifications.
 
-You configure the Pebble/CoreApp mobile app with a public webhook URL and token. When you send a voice message from the ring, the gateway receives it, routes it to a local connector, and the connector passes it to Codex, Claude, OpenClaw, or a simple CLI smoke-test runner. Agent answers return through Pushover or ntfy.
+You configure the Pebble/CoreApp mobile app with a public webhook URL and token. When you send a voice message from the ring, the gateway receives it and routes it to Codex, Claude, OpenClaw, GrokBot, or a simple CLI smoke-test runner. Codex, Claude, OpenClaw, and the CLI smoke test run through a local connector on your own machine; GrokBot is different — it has no local dependency, so the gateway itself forwards the transcript straight to a webhook you configure in the dashboard, no connector process required. Agent answers return through Pushover or ntfy.
 
 Source: https://github.com/sarfata/pebble-agent-gateway
 
@@ -35,6 +35,8 @@ You do not need to understand webhooks, SQLite, or encryption to get started. Th
 
 The agent connector runs locally where your agent already has access: inside your code checkout for Codex, on your workstation for Claude, or beside your OpenClaw workflows. It opens an outbound SSE connection to the relay, claims pending deliveries, runs the local agent command, acknowledges the delivery, and sends the answer back to the relay for a Pushover or ntfy notification.
 
+GrokBot skips all of that: it has no local CLI, so the gateway POSTs the transcript directly to a webhook URL you configure when creating the connector, and uses the webhook's response as the reply. Nothing needs to run on your machine for GrokBot.
+
 The relay does not need inbound access to your laptop. Your machine connects out to it.
 
 ## Privacy Model
@@ -44,6 +46,8 @@ By default, message contents are not stored in plaintext at rest.
 Pending messages are encrypted before they are written to SQLite. When a connector public key is configured, each pending delivery is encrypted to that key and decrypted locally by the connector. If no connector key is configured, the gateway encrypts the pending delivery with `APP_ENCRYPTION_KEY` and decrypts it during claim.
 
 When a connector claims a delivery, the encrypted payload is deleted from the active queue. If no connector claims it within the configured TTL, the payload is deleted, the message is marked expired, and the gateway sends an error through every configured response channel.
+
+GrokBot connectors are the exception: since the gateway forwards for you, it necessarily holds the webhook URL and token, encrypted at rest with `APP_ENCRYPTION_KEY` the same way Pushover and ntfy credentials are, decrypting them only to make the outbound request.
 
 The dashboard keeps metadata-only activity logs: timestamps, delivery status, target connector type, payload size, latency, and error codes. Transcripts and audio are not retained unless debug mode is explicitly enabled.
 
@@ -101,7 +105,7 @@ pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli keygen
 
 You can also leave the public key blank when creating a connector. In that mode the gateway encrypts pending messages at rest with `APP_ENCRYPTION_KEY`, decrypts them during claim, and still deletes the stored ciphertext on claim or expiry. This is easier to set up, but weaker than connector-side encryption because the gateway can decrypt pending messages.
 
-Create a connector in the dashboard with kind `codex`, `claude`, `openclaw`, `grokbot`, or `cli`, then copy the one-time `ag_live_...` token. You can run a connector without cloning this repo:
+Create a connector in the dashboard with kind `codex`, `claude`, `openclaw`, `grokbot`, or `cli`. For `codex`, `claude`, `openclaw`, and `cli`, copy the one-time `ag_live_...` token; you'll use it to run a local connector process. `grokbot` is different: instead of a token, the dashboard asks for a webhook URL (and optional token and payload key) and the gateway forwards messages to it directly — see [GrokBot: relay to any webhook](#grokbot-relay-to-any-webhook) below. You can run a connector without cloning this repo:
 
 ```bash
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent print
@@ -119,7 +123,6 @@ Run a real local agent connector:
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent codex
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel local-context
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent openclaw
-GROKBOT_WEBHOOK_URL=https://your-webhook.example.com/hook pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent grokbot
 ```
 
 Agent output is sent back to the gateway by default. If Pushover or ntfy is configured, the answer appears there. Use `--no-send-reply` to disable replies or `--reply "fixed text"` to send a fixed reply instead of the local agent output.
@@ -146,17 +149,17 @@ pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen -
 
 ### GrokBot: relay to any webhook
 
-GrokBot has no local CLI to install. Instead, the connector POSTs the rendered prompt directly to a webhook you control:
+GrokBot has no local CLI to install, so there is no connector process to run. Create the connector in the dashboard with kind `grokbot` and fill in:
 
-```bash
-GROKBOT_WEBHOOK_URL=https://your-webhook.example.com/hook
-GROKBOT_WEBHOOK_TOKEN=optional-bearer-token
-GROKBOT_PAYLOAD_KEY=text
-```
+- **Webhook URL** (required) — where the gateway POSTs each transcript.
+- **Webhook token** (optional) — sent as `Authorization: Bearer <token>`.
+- **Payload key** (optional, default `text`) — the JSON key the transcript is sent under, e.g. `{"text": "..."}`.
 
-`GROKBOT_WEBHOOK_URL` is required. `GROKBOT_WEBHOOK_TOKEN`, if set, is sent as `Authorization: Bearer <token>`. `GROKBOT_PAYLOAD_KEY` controls the JSON key used for the prompt text (default `text`), so the connector POSTs a body like `{"text": "..."}`. The webhook's response body becomes the reply; an empty body sends a generic confirmation instead. Like OpenClaw, GrokBot supports `--channel local-context` to keep recent ring turns in the prompt.
+That's it: ring messages routed to GrokBot (by voice prefix, default kind, or double-click-and-hold gesture, same as any other connector) are forwarded automatically, and the webhook's response body becomes the reply. Use **Send test** on the connector after creating it to verify the webhook without needing a ring.
 
-Customize the prompt passed to Codex, Claude, OpenClaw, or GrokBot with `-p`:
+If you'd rather keep the webhook secret off the gateway entirely, `pebble-agent-cli` also has a local `--agent grokbot` mode that reads `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_TOKEN`, and `GROKBOT_PAYLOAD_KEY` from the environment and relays locally instead — see `apps/agent-cli/src/agent-runner.ts` for details. This is an advanced, self-hosted-only path.
+
+Customize the prompt passed to Codex, Claude, or OpenClaw with `-p`:
 
 ```bash
 pnpm --package github:sarfata/pebble-agent-gateway dlx pebble-agent-cli listen --server https://your-gateway.example.com --token ag_live_... --agent claude --channel local-context -p 'Handle this voice request carefully:
@@ -193,8 +196,9 @@ double-click-and-hold agent on the Agents page; when it is unset, both gestures
 use the normal default. An explicit voice prefix such as `Claude, ...` still
 takes precedence over gesture routing.
 
-OpenClaw and GrokBot also support `--channel local-context`. Other connectors
-use the stateless `oneshot` channel by default.
+OpenClaw also supports `--channel local-context`. Other CLI connectors use the
+stateless `oneshot` channel by default. GrokBot's dashboard-configured mode
+has no channel concept; each ring message is forwarded independently.
 
 For long-term use, run the connector under tmux, screen, launchd, systemd, Docker, or another process supervisor. If the connector keeps an SSE connection open on Fly.io, the Machine remains active.
 
@@ -278,7 +282,7 @@ MCP_WEBHOOK_ALLOWED_HOSTS=
 
 `NTFY_ALLOWED_HOSTS` is a comma-separated allowlist used when saving ntfy targets. The hosted relay limits ntfy to `ntfy.sh` to prevent accounts from using the gateway to access private network services. Self-hosters can add their own public ntfy hostname.
 
-`MCP_WEBHOOK_ALLOWED_HOSTS` is a comma-separated escape hatch for MCP webhook callbacks that intentionally resolve to private or otherwise special-purpose IP addresses. Leave it empty for public callbacks and hosted deployments.
+`MCP_WEBHOOK_ALLOWED_HOSTS` is a comma-separated escape hatch for MCP webhook callbacks and GrokBot webhook forwarding that intentionally resolve to private or otherwise special-purpose IP addresses. Leave it empty for public callbacks and hosted deployments.
 
 ## Development
 

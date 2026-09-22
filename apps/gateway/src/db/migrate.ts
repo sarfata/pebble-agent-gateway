@@ -24,6 +24,10 @@ export function migrate(db: Db): void {
     if (!settingsColumns.some((column) => column.name === "double_action_agent_kind")) {
       db.prepare(`alter table user_settings add column double_action_agent_kind text`).run();
     }
+    const connectorColumns = db.prepare(`pragma table_info(agent_connectors)`).all() as Array<{ name: string }>;
+    if (!connectorColumns.some((column) => column.name === "encrypted_config_json")) {
+      db.prepare(`alter table agent_connectors add column encrypted_config_json text`).run();
+    }
   });
   tx();
   ensureGrokbotKindSupported(db);
@@ -59,14 +63,15 @@ function ensureGrokbotKindSupported(db: Db): void {
           name text not null,
           token_hash text not null unique,
           encryption_public_key text not null,
+          encrypted_config_json text,
           last_seen_at text,
           created_at text not null,
           revoked_at text
         )
       `).run();
       db.prepare(`
-        insert into agent_connectors_new (id, user_id, kind, name, token_hash, encryption_public_key, last_seen_at, created_at, revoked_at)
-        select id, user_id, kind, name, token_hash, encryption_public_key, last_seen_at, created_at, revoked_at from agent_connectors
+        insert into agent_connectors_new (id, user_id, kind, name, token_hash, encryption_public_key, encrypted_config_json, last_seen_at, created_at, revoked_at)
+        select id, user_id, kind, name, token_hash, encryption_public_key, encrypted_config_json, last_seen_at, created_at, revoked_at from agent_connectors
       `).run();
       db.prepare(`drop table agent_connectors`).run();
       db.prepare(`alter table agent_connectors_new rename to agent_connectors`).run();

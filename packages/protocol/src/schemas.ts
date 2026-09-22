@@ -23,7 +23,10 @@ export const replySchema = z.object({
 export const createAgentSchema = z.object({
   kind: z.enum(["openclaw", "claude", "codex", "cli", "grokbot"]),
   name: z.string().min(1).max(128),
-  encryption_public_key: z.string().max(4096).optional().default("")
+  encryption_public_key: z.string().max(4096).optional().default(""),
+  webhook_url: z.string().max(2048).optional(),
+  webhook_token: z.string().max(1024).optional(),
+  payload_key: z.string().min(1).max(128).optional()
 });
 
 export const createRingSchema = z.object({

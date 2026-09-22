@@ -38,6 +38,7 @@ export const migrations = [
     name text not null,
     token_hash text not null unique,
     encryption_public_key text not null,
+    encrypted_config_json text,
     last_seen_at text,
     created_at text not null,
     revoked_at text

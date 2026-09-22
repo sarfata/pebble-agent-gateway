@@ -6,6 +6,7 @@ export type AgentConnectorRow = {
   kind: "openclaw" | "claude" | "codex" | "cli" | "grokbot";
   name: string;
   encryption_public_key: string;
+  encrypted_config_json: string | null;
 };
 
 export function targetHintFromTranscript(transcript: string): AgentConnectorRow["kind"] | null {
@@ -32,9 +33,9 @@ export function routeConnectors(
   const gestureKind = trigger === "double-click-hold" ? settings?.double_action_agent_kind : null;
   const kind = hinted ?? gestureKind ?? settings?.default_agent_kind ?? null;
   const agents = kind
-    ? db.prepare(`select id, user_id, kind, name, encryption_public_key from agent_connectors where user_id = ? and kind = ? and revoked_at is null`)
+    ? db.prepare(`select id, user_id, kind, name, encryption_public_key, encrypted_config_json from agent_connectors where user_id = ? and kind = ? and revoked_at is null`)
       .all(userId, kind) as AgentConnectorRow[]
-    : db.prepare(`select id, user_id, kind, name, encryption_public_key from agent_connectors where user_id = ? and revoked_at is null order by created_at asc limit 1`)
+    : db.prepare(`select id, user_id, kind, name, encryption_public_key, encrypted_config_json from agent_connectors where user_id = ? and revoked_at is null order by created_at asc limit 1`)
       .all(userId) as AgentConnectorRow[];
   return { targetHint: kind, agents };
 }
