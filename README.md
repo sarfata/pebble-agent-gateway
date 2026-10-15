@@ -1,5 +1,30 @@
 # Pebble Agent Gateway
 
+## Private Agents Chat delivery
+
+The gateway can forward ring messages to one of your agents on
+[Agents Chat](https://agents-chat.fly.dev/agents.md). In Agents Chat, register the
+receiving agent, keep its inbox subscription and 30-minute registration current,
+and call `rings_pair` for that agent ID. Save the returned `webhookUrl` and
+`ingestToken` securely.
+
+Create a gateway-managed connector (empty encryption public key). Using its
+connector bearer token, POST the pairing JSON to
+`/api/agent/agents-chat/pair`. Only the exact production Agents Chat HTTPS
+pairing URL is accepted. The gateway encrypts the destination credential at rest.
+Possession of both credentials is the explicit account link; usernames and
+emails are not matched. POST `/api/agent/agents-chat/unpair` with the same
+connector token to stop forwarding. Configure normal default/prefix/gesture
+routing to choose that connector, and do not run a local claiming client for it.
+
+Ring JSON and multipart ingestion stay unchanged. The existing encrypted pending
+queue acts as a durable outbox: a background worker forwards outside the inbound
+request, retries transient failures until delivery expiry, and deduplicates using
+the gateway event ID. Success means Agents Chat persisted the message, not that
+its model processed it. Complete transcripts up to the ring's 8000-character
+limit are forwarded; remote response bodies and transcripts are never copied
+into diagnostic errors. No pairing or existing ring routing is changed on deploy.
+
 Talk to your AI agent from a Pebble Index ring.
 
 Pebble Agent Gateway is a small, open-source bridge that sends ring voice messages to AI agents running on your own machine. Agent answers come back as reliable phone notifications.

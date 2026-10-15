@@ -74,7 +74,7 @@ export type WebhookPostResult = {
 };
 
 export interface WebhookHttpClient {
-  post(url: string, body: string, headers: Record<string, string>): Promise<WebhookPostResult>;
+  post(url: string, body: string, headers: Record<string, string>, signal?: AbortSignal): Promise<WebhookPostResult>;
 }
 
 class InvalidWebhookUrlError extends Error {}
@@ -97,7 +97,8 @@ export class SafeWebhookHttpClient implements WebhookHttpClient {
     this.allowedHosts = new Set(allowedHosts.map((host) => host.toLowerCase()));
   }
 
-  async post(urlString: string, body: string, headers: Record<string, string>): Promise<WebhookPostResult> {
+  async post(urlString: string, body: string, headers: Record<string, string>, signal?: AbortSignal): Promise<WebhookPostResult> {
+    signal?.throwIfAborted();
     const url = parseWebhookUrl(urlString);
     const hostname = stripIpv6Brackets(url.hostname);
     const addresses = isIP(hostname)
@@ -119,6 +120,7 @@ export class SafeWebhookHttpClient implements WebhookHttpClient {
         port: url.port || undefined,
         path: `${url.pathname}${url.search}`,
         method: "POST",
+        signal,
         headers: {
           ...headers,
           "Content-Length": Buffer.byteLength(body).toString()

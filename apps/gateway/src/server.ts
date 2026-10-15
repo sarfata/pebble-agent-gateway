@@ -14,17 +14,20 @@ import { provisionRoutes } from "./routes/provision.js";
 import { dashboardApiRoutes } from "./routes/dashboard-api.js";
 import { mcpRoutes } from "./routes/mcp.js";
 import { DeliveryStreamHub } from "./services/queue/stream.js";
-import { McpEventsService } from "./services/mcp-events.js";
+import { McpEventsService, type WebhookHttpClient } from "./services/mcp-events.js";
 import { expirePendingDeliveries } from "./services/queue/expire.js";
 import { ShutdownManager } from "./services/shutdown.js";
+import { AgentsChatBridge } from "./services/agents-chat-bridge.js";
+import { agentsChatRoutes } from "./routes/agents-chat.js";
 
-export function createApp() {
+export function createApp(options: { agentsChatHttp?: WebhookHttpClient } = {}) {
   const webRoot = fileURLToPath(new URL("../dist-web", import.meta.url));
   const webIndex = fileURLToPath(new URL("../dist-web/index.html", import.meta.url));
   const config = loadConfig();
   const db = openDb(config.databaseUrl);
   void expirePendingDeliveries(db, config).catch((error) => console.error("expiration cleanup failed", error));
   const hub = new DeliveryStreamHub();
+  const agentsChat = new AgentsChatBridge(db, config, options.agentsChatHttp);
   const mcpEvents = new McpEventsService(db, config, hub);
   let draining = false;
   const app = new Hono();
@@ -36,6 +39,7 @@ export function createApp() {
   app.route("/api/agent", agentEventsRoutes(db, config, hub));
   app.route("/api/agent", agentDeliveryRoutes(db, config, () => draining));
   app.route("/api/agent", agentRepliesRoutes(db, config));
+  app.route("/api/agent", agentsChatRoutes(db, config));
   app.route("/api/provision", provisionRoutes(db, config));
   app.route("/api/dashboard", dashboardApiRoutes(db, config));
   app.route("/mcp", mcp.app);
@@ -50,6 +54,7 @@ export function createApp() {
     config,
     db,
     hub,
+    agentsChat,
     setDraining(value: boolean) {
       draining = value;
       if (value) hub.markDraining();
@@ -58,7 +63,7 @@ export function createApp() {
       clearInterval(expirationInterval);
       mcpEvents.close();
       void mcp.close();
-      db.close();
+      return agentsChat.close().then(() => db.close());
     }
   };
 }
@@ -68,6 +73,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const server = serve({ fetch: runtime.app.fetch, port: runtime.config.port }, ({ port }) => {
     console.log(`Pebble Agent Gateway listening on http://localhost:${port}`);
   });
-  const shutdown = new ShutdownManager(server, runtime.db, runtime.config, runtime.hub);
+  const shutdown = new ShutdownManager(server, runtime.db, runtime.config, runtime.hub, () => runtime.close());
   shutdown.install();
 }

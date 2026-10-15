@@ -10,6 +10,10 @@ type StoredPayloadEnvelope = EncryptedPayloadEnvelope | AppEncryptedPayloadEnvel
 export function claimDelivery(db: Db, config: GatewayConfig, agent: AuthAgent, deliveryId: number) {
   const now = new Date().toISOString();
   const tx = db.transaction(() => {
+    // A paired connector is consumed exclusively by the durable bridge worker,
+    // not simultaneously by a local connector process.
+    const pairedTable = db.prepare(`select 1 from sqlite_master where type = 'table' and name = 'agents_chat_targets'`).get();
+    if (pairedTable && db.prepare(`select 1 from agents_chat_targets where agent_id = ? and user_id = ?`).get(agent.id, agent.user_id)) return { status: 409 as const };
     const row = db.prepare(`select * from agent_deliveries where id = ? and agent_id = ?`)
       .get(deliveryId, agent.id) as { id: number; event_id: string; user_id: string; encrypted_payload_json: string | null; status: string; expires_at: string; available_at: string } | undefined;
     if (!row) return { status: 404 as const };

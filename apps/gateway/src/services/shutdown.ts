@@ -11,7 +11,8 @@ export class ShutdownManager {
     private readonly server: { close(callback?: (err?: Error) => void): unknown },
     private readonly db: Db,
     private readonly config: GatewayConfig,
-    private readonly hub: DeliveryStreamHub
+    private readonly hub: DeliveryStreamHub,
+    private readonly beforeClose?: () => Promise<unknown>
   ) {}
 
   isDraining(): boolean {
@@ -33,7 +34,8 @@ export class ShutdownManager {
       try {
         await expirePendingDeliveries(this.db, this.config);
         checkpoint(this.db);
-        this.db.close();
+        if (this.beforeClose) await this.beforeClose();
+        else this.db.close();
       } finally {
         process.exit(0);
       }
